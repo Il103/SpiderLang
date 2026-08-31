@@ -61,17 +61,21 @@ SPIDER_BANNER = """\
         |__________________|
 """
 
-# A clean spider emblem for sub-commands
+# Spider emblem — BIG natural spider, simple single
 SPIDER_LOGO = """\
-   .-.    .-.
-  (   )  (   )
-   \\_/    \\_/
-    /\\____/\\
-   /  \\  /  \\
-  |    \\/    |
-  |    ||    |       < SpiderLang >
-   \\         /
-    \\_______/
+             /      \\                    < SpiderLang >
+            \\  \\  ,,  /  /              ONE LANGUAGE • EVERY DEVICE
+             '-.`\\()/`.-'                SpiderLang v3.0
+            .--_'(  )'_--.                ─────────
+           / /` /`""`\\ `\\ \\
+            |  |  ><  |  |                8 legs • natural
+            \\  \\      /  /                simple • jgs
+             _  '.__.'  _
+          _\\( )/_                         lunch → natural
+           /(O)\\                          8 legs • simple
+               _\\\\()//_
+              / //  \\\\ \\
+               | \\__/ |
 """
 
 def build_header(target="twrp"):
