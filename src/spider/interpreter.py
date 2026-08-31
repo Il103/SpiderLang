@@ -353,7 +353,7 @@ class Interpreter:
                     break
         if not codename:
             for f in files:
-                m = re.match(r"^(?:omni_|ofox_|pbrp_|shrp_|rw_|twrp_|ctr_)([A-Za-z0-9_\-]+)\.mk$", f)
+                m = re.match(r"^(?:omni_|ofox_|pbrp_|shrp_|rw_|twrp_|ctr_)([A-Za-z0-9_\-]+)\.(?:mk|st)$", f)
                 if m:
                     codename = m.group(1)
                     break
@@ -366,22 +366,22 @@ class Interpreter:
                         codename = m.group(1)
                         break
 
-        # ---- recovery variant: which codename makefile family is present ----
+        # ---- recovery variant: which codename family is present (.st/.mk) ----
         variants = []
         fam = {"omni_": "twrp", "ofox_": "orangefox", "pbrp_": "pitchblack",
                "shrp_": "shrp", "rw_": "redwolf", "twrp_": "twrp", "ctr_": "ctr"}
         for f in files:
             for pref, name in fam.items():
-                if f.startswith(pref) and f.endswith(".mk"):
+                if f.startswith(pref) and (f.endswith(".st") or f.endswith(".mk")):
                     if name not in variants:
                         variants.append(name)
-        # also detect from flags present in any mk
+        # also detect from flags present in any codename/st file
         if not variants:
             for f in files:
-                if f.endswith(".mk"):
+                if f.endswith((".mk", ".st")):
                     content = self.builtin_read(os.path.join(full, f))
                     for pref, name in {"TW_": "twrp", "OF_": "orangefox", "PBRP_": "pitchblack", "SHRP_": "shrp"}.items():
-                        if re.search(rf"^{pref}", content, re.M):
+                        if re.search(rf"{pref}", content):
                             if name not in variants:
                                 variants.append(name)
 
@@ -405,10 +405,24 @@ class Interpreter:
                         "role": self._partition_role(mp),
                     })
 
+        # ---- image types defined by any .st second-language file ----
+        images = {}
+        for f in files:
+            if f.endswith(".st"):
+                content = self.builtin_read(os.path.join(full, f))
+                for it in ("recovery", "boot", "vendor_boot", "init_boot"):
+                    if re.search(rf'image\s+"{it}"', content):
+                        images[it] = f
+        if not images:
+            # infer from partition table if no .st declares it
+            for mp in ("/recovery", "/boot", "/vendor_boot"):
+                if any(p["mount"] == mp for p in partitions):
+                    images[mp.lstrip("/")] = "(from fstab)"
+
         # ---- lunch combos ----
         lunch = []
         if "vendorsetup.sh" in files:
-            content = self.builtin_read(os.path.join(path, "vendorsetup.sh"))
+            content = self.builtin_read(os.path.join(full, "vendorsetup.sh"))
             lunch = re.findall(r"add_lunch_combo\s+['\"]?([A-Za-z0-9_.\-]+)", content)
 
         return {
@@ -417,9 +431,11 @@ class Interpreter:
             "codename": codename,
             "recoveries": variants,                    # e.g. ["twrp"], ["orangefox"]
             "partitions": partitions,
+            "images": images,                          # e.g. {"recovery": ...}
             "lunch": lunch,
             "count_mk": len([f for f in files if f.endswith(".mk")]),
             "count_spt": len([f for f in files if f.endswith(".spt")]),
+            "count_st": len([f for f in files if f.endswith(".st")]),
             "files": files,
         }
 

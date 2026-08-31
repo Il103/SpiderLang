@@ -22,34 +22,38 @@ FFI, SpiderLang can call any other language when you genuinely need it.
 - **The language understands any device tree** — codename, recovery variant,
   partitions, A/B slots and lunch combos are derived *by the language itself*
   from whatever is actually in the tree. No per-device scripts.
-- **Reads every file in a tree natively** — `BoardConfig.spt`, `ofox_*.mk`,
-  `omni_*.mk`, `pbrp_*.mk`, `shrp_*.mk`, `device.mk`, `fstab.*`, `vendorsetup.sh`.
+- **Reads every file in a tree natively** — `BoardConfig.spt`, `ofox_*.st`,
+  `omni_*.st`, `pbrp_*.st`, `shrp_*.st`, `device.mk`, `fstab.*`, `vendorsetup.sh`.
   If there is a `.spt`, that is the tree.
 - **Every recovery supported** — TWRP, OrangeFox, PitchBlack (PBRP), SkyHawk
-  (SHRP), RedWolf, and more — each detected from its codename makefile.
+  (SHRP), RedWolf, and more — each detected from its codename file (`.st`/`.mk`).
 - **First-class file I/O** — `read()`, `readlines()`, `listdir()`, `write()`
   and `understand()` are built into the language core, not shipped as scripts.
 - **Universal FFI** — `use python "ai.py"`, `use cpp "math.cpp"` — one syntax
   to call any language.
 - **Size system** — `64.MB == 65536.KB == 67108864.B` — B to EB (binary 1024).
-- **Android Recovery DSL** — `board { ... }` replaces `BoardConfig.mk`.
+- **Android Recovery DSL** — `board { ... }` replaces `BoardConfig.mk`; the
+  **second language `.st`** defines the images & flags (`image "recovery" { }`,
+  `image "vendor_boot" { }`, `image "boot" { }`) for any codename recovery.
 - **Safe & Strict** — line:col error reporting, no silent bugs.
 - **Solo built** — designed, specified, and implemented by one person: Beru.
   Lexer, Parser, AST, VM all handwritten from scratch.
 
 ## Extension
 
-`.spt` (primary) and `.spider`
+`.spt` (primary), `.spider`, and the second language `.st` (recovery / image
+definitions, replacing the old codename `.mk` files).
 
 ## Quick Start
 
 ```bash
 pip install -e .
-spider run examples/hello.spt
-spider info device/infinix/X6886        # the language understands the tree
-spider tree device/infinix/X6886        # tree + partitions + codename
-spider build twrp --tree device/infinix/X6886
-spider build orangefox --tree device/samsung/a70q   # A/B device, OrangeFox
+spider init falcon --path device/xiaomi/falcon   # scaffold a device tree
+spider info device/xiaomi/falcon                  # the language understands it
+spider tree device/xiaomi/falcon                  # tree + partitions + codename
+spider build twrp --tree device/xiaomi/falcon     # build recovery.img
+spider build vendor_boot --tree device/xiaomi/falcon   # build vendor_boot.img
+spider build boot --tree device/xiaomi/falcon          # build boot.img
 spider convert BoardConfig.spt --to mk
 spider check BoardConfig.spt
 ```
@@ -67,7 +71,7 @@ func factorial(n) {
 print(factorial(5))  // 120
 
 // First-class file I/O — the language reads a device tree by itself
-let tree = understand("device/infinix/X6886")
+let tree = understand("device/xiaomi/falcon")
 print("codename : {tree.codename}")
 print("recovery : {tree.recoveries}")
 print("partitions: {tree.partitions}")
@@ -76,6 +80,26 @@ print("partitions: {tree.partitions}")
 use python "ai.py" as ai
 use cpp "math.cpp" as math
 ```
+
+## Second Language (.st) — recovery & image definitions
+
+The `.st` files replace the old codename `.mk` files. The `image` block drives
+any of the three image types, each with its own header & flags:
+
+```spider
+// ofox_falcon.st — OrangeFox over an A/B device
+image "vendor_boot" {
+    kernel: "Image.gz-dtb",
+    vendor_boot_ramdisk: ["vendor-ramdisk", "ofox-ramdisk"],
+    vendor_dtb: "kona.dtb",
+    header_v3_v4: true,
+    flags: ["OF_USE_TWRP_SAR_DETECT", "OF_USE_MAGISKBOOT"]
+}
+```
+
+The language knows every image type & flag natively — `recovery.img`
+(header v0-2), `vendor_boot.img` (header v3/v4), and `boot.img` — so any
+`fstab.*` and any `*_<codename>.st` is read automatically.
 
 ## Android Recovery Example
 
@@ -102,8 +126,12 @@ checker.verify_sizes(board.bootloader)
 Build it:
 
 ```bash
-spider build twrp --tree device/infinix/X6886
+spider build twrp --tree device/xiaomi/falcon
 # Generates out/board.json and builds recovery.img
+spider build vendor_boot --tree device/xiaomi/falcon
+# Stages vendor ramdisk fragments, packs vendor_boot.img (header v3/v4)
+spider build boot --tree device/xiaomi/falcon
+# Packs boot.img (header v0-4)
 ```
 
 ## Size Units
@@ -131,11 +159,14 @@ All binary (1024):
 spider info <path>               Full device report (language understanding)
 spider tree <path>               Device tree + partitions + A/B + codename
 spider lunch <device>            Select device (auto-detects codename+variant)
-spider build twrp --tree <path>  Build any recovery natively from .spt
-spider build orangefox --tree .. Build OrangeFox on an A/B device
-spider run <file.spt>            Run a SpiderLang file
+spider build <target> --tree .. Build any recovery OR image type
+spider build recovery --tree .. Build recovery.img  (header v0-2)
+spider build vendor_boot --tree ..  Build vendor_boot.img (header v3/v4)
+spider build boot --tree ..     Build boot.img (header v0-4)
+spider build twrp --tree <path> Build TWRP recovery natively from .spt
+spider run <file.spt>           Run a SpiderLang file (.spt / .st)
 spider convert <file.spt> --to mk  Convert .spt to .mk (legacy)
-spider check <file.spt>          Check syntax only
+spider check <file.spt>         Check syntax only
 ```
 
 ## Architecture
@@ -148,12 +179,15 @@ src/spider/
 ├── interpreter.py // Tree-walk VM + SpiderSize + board DSL + file I/O
 │                  //   + understand() — reads any device tree natively
 ├── recoveries.py // Language knowledge: every recovery + its codename/flags
+├── images.py     // Language knowledge: recovery.img / vendor_boot.img / boot.img
+│                  //   + every header version & flag set
+├── themes.py     // Per-command CLI identities (logos + colours)
 ├── ffi/          // Universal FFI plugins
 │   ├── registry.py
 │   ├── python.py
 │   ├── cpp.py
 │   └── js.py
-└── cli.py        // spider binary with ASCII art
+└── cli.py        // spider binary with handcrafted ASCII per command
 ```
 
 From scratch: No `eval`, no `exec`, no ANTLR, no PLY — every token and node is

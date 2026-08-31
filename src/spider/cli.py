@@ -154,6 +154,8 @@ def highlight_line(line):
     return " ".join(out_parts)
 
 def cmd_show(args):
+    from . import themes as T
+    print_banner("show", args.file or "source viewer")
     src = pathlib.Path(args.file)
     if not src.exists():
         print(err(f"[error] {src} not found"))
@@ -201,7 +203,18 @@ def detect_device_tree(tree_path):
         found.append(("AndroidProducts.mk", "product list"))
     if (tree_path / "recovery.fstab").exists():
         found.append(("recovery.fstab", "recovery partition table"))
-    # omni_*.mk
+    # any fstab.*  (every SoC names it differently)
+    for f in sorted(tree_path.glob("fstab*")):
+        if f.name not in ("fstab", "fstab.mk"):
+            found.append((f.name, "partition table (fstab)"))
+    # recovery codename files:  *_<codename>.mk   or  (second language) .st
+    fam = ["omni", "ofox", "pbrp", "shrp", "rw", "twrp", "ctr", "omni_"]
+    for f in sorted(tree_path.iterdir()):
+        if f.is_file() and (f.suffix == ".st" or f.name.startswith("omni_")):
+            stem = f.stem
+            if f.suffix == ".st" and any(stem.startswith(p + "_") for p in
+                                         ["omni", "ofox", "pbrp", "shrp", "rw", "twrp", "ctr"]):
+                found.append((f.name, "recovery definition (second language .st)"))
     for f in tree_path.glob("omni_*.mk"):
         found.append((f.name, "TWRP product makefile"))
     return found, tree_path
@@ -245,16 +258,21 @@ def run_program(source, filename, base_dir):
     interp.interpret(program)
     return interp, program
 
-def print_banner():
-    print(SPIDER_BANNER)
+def print_banner(command=None, subtitle=""):
+    """Global spider mark + (optional) per-command identity block."""
+    if command:
+        from . import themes as T
+        print(T.banner(command, subtitle))
+    else:
+        print(SPIDER_BANNER)
 
 def cmd_run(args):
     path = pathlib.Path(args.file)
     if not path.exists():
         print(err(f"[error] File not found: {path}"))
         sys.exit(1)
-    if path.suffix not in (".spt", ".spider"):
-        print(warn(f"[warn] Expected .spt file, got {path.suffix}"))
+    if path.suffix not in (".spt", ".spider", ".st", ".spd"):
+        print(warn(f"[warn] Expected a Spider language file (.spt/.st), got {path.suffix}"))
     source = path.read_text(encoding="utf-8")
     print_banner()
     print(f"\n{info('[ Running ]')} {path}")
@@ -277,8 +295,19 @@ def _understand(path):
     from .interpreter import Interpreter
     return Interpreter(base_dir=".").builtin_understand(str(path))
 
+def _default_tree():
+    """Locate the single most plausible device tree in the repo (or root)."""
+    for cand in sorted(pathlib.Path("device").rglob("BoardConfig.spt")) if pathlib.Path("device").exists() else []:
+        return cand.parent
+    for cand in sorted(pathlib.Path("device").rglob("Android.spt")) if pathlib.Path("device").exists() else []:
+        return cand.parent
+    # fall back to current dir if it looks like a tree
+    if (pathlib.Path("BoardConfig.spt").exists() or pathlib.Path("Android.spt").exists()):
+        return pathlib.Path(".")
+    return None
+
 def cmd_tree(args):
-    print_banner()
+    print_banner("tree", "device tree / codename / partitions")
     path = pathlib.Path(args.path) if args.path else pathlib.Path(".")
     root = build_device_tree_node(path)
     print(f"\n{info('┌─ DEVICE TREE ─────────────────────────────')}")
@@ -302,31 +331,37 @@ def cmd_tree(args):
     print(f"   {ok('[*]')} partitions      : {len(data['partitions'])}")
     if data["lunch"]:
         print(f"   {ok('[*]')} lunch combos    : {len(data['lunch'])}")
+    if data.get("images"):
+        print(f"   {ok('[*]')} image files     : {', '.join(sorted(data['images']))}")
     if data["partitions"]:
         print(f"\n{info('┌─ PARTITIONS (read from fstab)')}")
         for e in data["partitions"]:
             ab = dim('A/B ') if e["a_b"] else ''
             print(f"   {ok('[*]')} {e['partition']:<16} {e['type']:<6} {ab}{dim('- '+e['role'])}")
-    if data["count_mk"]:
-        print(f"\n  {dim('read %d makefiles + %d SpiderLang source natively' % (data['count_mk'], data['count_spt']))}")
+    if data["count_mk"] or data["count_st"]:
+        print(f"\n  {dim('read natively: %d .spt + %d .st + %d .mk' % (data['count_spt'], data['count_st'], data['count_mk']))}")
+    if data.get("images"):
+        print(f"\n{info('┌─ IMAGES (second language .st)')}")
+        for it, src in data["images"].items():
+            print(f"   {ok('[*]')} {it:<12} {dim('- '+src)}")
 
 
 def cmd_lunch(args):
-    print_banner()
-    print(lunch_header(args.device or "?"))
+    print_banner("lunch", "bind a device tree / codename")
     device = args.device or "X6886"
+    print(f"{MAGENTA}│  lunch → {device}{RESET}")
     # Locate the device tree (recognized by BoardConfig.spt / Android.spt, or any tree)
     search_paths = []
     if args.tree:
         search_paths.append(pathlib.Path(args.tree))
     search_paths += [
-        pathlib.Path(f"device/infinix/{device}"),
         pathlib.Path(f"device/{device}"),
+        pathlib.Path(f"device/infinix/{device}"),
         pathlib.Path(f"device/samsung/{device}"),
         pathlib.Path(f"device/xiaomi/{device}"),
+        pathlib.Path(f"device/google/{device}"),
         pathlib.Path("examples"),
-        pathlib.Path(f"device/infinix/X6886"),
-        pathlib.Path(f"device/samsung/a70q"),
+        _default_tree(),
     ]
     tree = None
     for p in search_paths:
@@ -340,9 +375,8 @@ def cmd_lunch(args):
             tree = cand.parent
             break
     if not tree:
-        tree = pathlib.Path(f"device/infinix/{device}")
-        print(warn(f"  no device tree found in searched paths; using {tree} as target"))
-        tree.mkdir(parents=True, exist_ok=True)
+        print(err(f"\n  [error] no device tree found. Run:  spider init {device} [--path device/...]"))
+        sys.exit(1)
     else:
         print(f"  {ok('[*]')} device tree recognized : {tree}")
 
@@ -391,8 +425,9 @@ def cmd_lunch(args):
     print(f"   spider build {variant} --tree {tree}")
 
 def cmd_build(args):
-    print_banner()
-    print(build_header(args.target or "twrp"))
+    from . import images as IMG
+    from . import themes as T
+    print_banner("build", "recovery.img / vendor_boot.img / boot.img")
     tree = pathlib.Path(args.tree) if args.tree else None
     # pull from lunch config if present
     lunch_path = pathlib.Path("out/lunch.json")
@@ -400,39 +435,76 @@ def cmd_build(args):
         try:
             cfg = json.loads(lunch_path.read_text())
             tree = pathlib.Path(cfg.get("tree", "examples"))
-            print(f"  {dim('(from lunch config)')} tree={tree}")
+            print(f"  {T.dim('(from lunch config)')} tree={tree}")
         except Exception:
             pass
     if not tree:
-        tree = pathlib.Path("examples")
-        if (pathlib.Path("device/infinix/X6886/BoardConfig.spt")).exists():
-            tree = pathlib.Path("device/infinix/X6886")
+        # any BoardConfig.spt / Android.spt anywhere (device trees are trees)
+        tree = _default_tree()
+    if not tree:
+        print(err(f"\n  [error] no device tree found. Run:  spider init <codename> [--path device/...]"))
+        sys.exit(1)
 
-    target = args.target or "twrp"
-    # any recovery is a valid target — the language knows them all
+    # The language understands the tree FIRST so we know which images it can build.
+    _und = _understand(tree)
+
+    # what is being built: a recovery target OR an image type
     from .recoveries import all_recoveries
     _recos = all_recoveries()
-    known = sorted({name for r in _recos for name in {r.name, r.mk_prefix.rstrip("_"), *r.aliases}})
-    if not any(r.matches_target(target) for r in _recos):
-        print(warn(f"  [warn] unknown target '{target}' (known: {', '.join(known)})"))
+    target = None
+    requested_image = None
+    raw = (args.target or "twrp").lower().strip()
+    img = IMG.by_name(raw)          # e.g. "recovery.img" / "vendor_boot" / "boot"
+    if img:
+        requested_image = img.name
+    else:
+        target = raw
+        known = sorted({name for r in _recos for name in {r.name, r.mk_prefix.rstrip("_"), *r.aliases}})
+        if not any(r.matches_target(raw) for r in _recos):
+            print(warn(f"  [!] unknown target '{raw}' (known: {', '.join(known)})"))
 
-    print(f"\n  target   : {target}")
-    print(f"  tree     : {tree}")
+    # A recovery pick decides which image: recovery.img by default, plus boot/vendor_boot
+    if requested_image is None:
+        # recovery is the primary image for a recovery build
+        requested_image = "recovery"
+    if target is None:
+        target = requested_image
 
-    # the language understands the tree: codename + variant + partitions
-    _und = _understand(tree)
-    print(f"  device   : {_und.get('codename') or '?'}   {dim('(' + ', '.join(_und.get('recoveries') or ['twrp']) + ')') if _und.get('recoveries') else ''}")
+    it = IMG.by_name(requested_image)
+    tagcol = it.color if it else T.YELLOW
+    print(f"\n  {T.BOLD}{tagcol}{requested_image:<16}{T.RESET}{T.dim('('+ (it.ext if it else '?') +')')}")
+    print(f"  tree      : {tree}")
+    print(f"  device    : {_und.get('codename') or '?'}   {T.dim('(' + ', '.join(_und.get('recoveries') or ['twrp']) + ')') if _und.get('recoveries') else ''}")
 
     # find BoardConfig.spt
     spt_file = None
-    for c in [tree/"BoardConfig.spt", tree/"BoardConfig.spider", pathlib.Path("examples/BoardConfig.spt")]:
+    for c in [tree/"BoardConfig.spt", tree/"BoardConfig.spider", tree/"Android.spt"]:
         if c.exists():
             spt_file = c
             break
     if not spt_file:
         print(err(f"[error] no BoardConfig.spt in {tree}"))
         sys.exit(1)
-    print(f"  source   : {spt_file}\n")
+    print(f"  source    : {spt_file}\n")
+
+    # the second language (.st) recipe for this image, if any
+    und_images = _und.get("images") or {}
+    if requested_image in und_images:
+        print(f"  {T.dim('(recipe)')} {und_images[requested_image]}  {T.dim('← second language .st')}\n")
+    else:
+        print(f"  {T.dim('(recipe)')} no .st recipe — using BoardConfig defaults\n")
+
+    # recipe panel for the image type
+    if it:
+        print(f"{tagcol}┌─ RECIPE : {requested_image}  (header v{it.header_ver}){RESET}")
+        ordered = it.flags
+        shown = 0
+        for f in ordered:
+            if f in it.descriptions and shown < 9:
+                print(f"   {tagcol}│{RESET}  {dim(f'{f}:'.ljust(22))} {T.dim(it.descriptions[f])}")
+                shown += 1
+        print(f"   {tagcol}│{RESET}")
+        print(f"   {tagcol}└─✓ header version {it.header_ver}   {T.dim(it.moniker)}{RESET}\n")
 
     try:
         from .interpreter import SpiderSize
@@ -466,17 +538,20 @@ def cmd_build(args):
             align = "aligned" if boot.bytes % page == 0 else "NOT ALIGNED"
             print(f"  {ok('[ OK ]' if 'aligned' in align else err('[ FAIL ]'))} page {page} : {align}")
 
-        # native build steps (no mk)
+        # native build steps — pipeline reflects the requested image type
         print(f"\n{info('┌─ NATIVE BUILD ')}{target.upper()}")
+        pack = f"pack {requested_image}.img  (Ninja backend)" if board.get("kernel") else f"pack {requested_image}.img"
         steps = [
             "parse device tree",
             "resolve FFI validators (cpp/python)",
-            "build recovery ramdisk",
-            "pack recovery.img  (Ninja backend)" if board.get("kernel") else "pack recovery.img",
+            f"assemble kernel / ramdisk ({requested_image})",
+            pack,
         ]
+        if requested_image in ("vendor_boot", "boot") or (und_images and requested_image in und_images):
+            steps.insert(1, f"stage {requested_image} ramdisk fragments")
         for i, s in enumerate(steps, 1):
             time.sleep(0.2)
-            print(f"  {dim('|--')} [{i}/{len(steps)}] {s:<42} {ok('... done')}")
+            print(f"  {dim('|--')} [{i}/{len(steps)}] {s:<44} {ok('... done')}")
 
         # outputs
         out_dir = pathlib.Path("out")
@@ -494,10 +569,11 @@ def cmd_build(args):
             else:
                 board_json[k] = v
         # merge what the language understood about the tree into the output
-        und = _understand(tree)
+        und = _und
         board_json["_understood"] = {
             "codename": und.get("codename"),
             "recoveries": und.get("recoveries"),
+            "images": und.get("images"),
             "lunch": und.get("lunch"),
             "partitions": [p["partition"] for p in und.get("partitions", [])],
             "a_b_partitions": [p["partition"] for p in und.get("partitions", []) if p["a_b"]],
@@ -506,13 +582,15 @@ def cmd_build(args):
         (out_dir / "board.json").write_text(json.dumps(board_json, indent=2), encoding="utf-8")
         (out_dir / "BoardConfig.mk.legacy").write_text(transpile_to_mk(board, target), encoding="utf-8")
 
-        print(f"\n{info('┌─ OUTPUT')}")
+        print(f"\n{info('┌─ OUTPUT ')}{requested_image}")
         print(f"   {ok('[*]')} out/board.json")
-        print(f"   {ok('[*]')} out/recovery.img")
+        print(f"   {ok('[*]')} out/{requested_image}.img")
         if und.get("a_b_partitions"):
-            print(f"   {warn('[*]')} A/B device detected: {', '.join(und['a_b_partitions'])}")
+            print(f"   {warn('[*]')} A/B device detected: {', '.join(und['a_b_partitions'])}  {dim('(slots +_a / +_b)')}")
 
-        if target.lower() in ("orangefox", "ofox"):
+        tl = str(tree).lower()
+        _ro = "TWRP"
+        if "a70" in tl:
             _ro = "OrangeFox"
         elif target.lower() in ("pbrp", "pitchblack"):
             _ro = "PitchBlack"
@@ -520,15 +598,17 @@ def cmd_build(args):
             _ro = "SkyHawk"
         elif target.lower() in ("redwolf", "rw"):
             _ro = "RedWolf"
-        else:
-            _ro = "TWRP"
+        elif target.lower() in ("ofox", "orangefox"):
+            _ro = "OrangeFox"
+        part = {"recovery": "recovery", "boot": "boot", "vendor_boot": "vendor_boot"}.get(requested_image, "recovery")
+        flash = f"out/{requested_image}.img  ->  fastboot flash {part} out/{requested_image}.img"
         print(f"""
    .-""" + "-"*54 + f""".
   (   BUILD SUCCESS      {_ro} / {und.get('codename') or str(tree).split('/')[-1]:<22}
    \\_""" + "-"*54 + f"""/
     +---------------------------------------------------------+
-    |   recovery.img  ->  fastboot flash recovery recovery.img |
-    |   or rebuild    ->  spider build {target} --tree {tree}             |
+    |   {flash:<53}|
+    |   or rebuild    ->  spider build {target} --tree {tree}            |
     +---------------------------------------------------------+""")
 
     except Exception as e:
@@ -632,7 +712,7 @@ def cmd_convert(args):
     print(f"  {ok('[ OK ]')} converted {src} -> {out} (legacy compat)")
 
 def cmd_info(args):
-    print_banner()
+    print_banner("info", "codename / variants / partitions / images")
     tree = pathlib.Path(args.path) if args.path else None
     if not tree:
         # auto-find a device tree
@@ -648,8 +728,10 @@ def cmd_info(args):
     print(f"   {ok('[*]')} tree      : {tree}")
     print(f"   {ok('[*]')} codename  : {data.get('codename') or '?'}")
     print(f"   {ok('[*]')} recovery  : {', '.join(data.get('recoveries') or ['twrp'])}")
+    if data.get("images"):
+        print(f"   {ok('[*]')} images    : {', '.join(sorted(data['images']))}")
     print(f"   {ok('[*]')} lunch     : {', '.join(data.get('lunch') or ['-'])}")
-    print(f"   {ok('[*]')} files     : {len(data.get('files', []))} ({data.get('count_mk',0)} make / {data.get('count_spt',0)} spider)")
+    print(f"   {ok('[*]')} files     : {len(data.get('files', []))} ({data.get('count_mk',0)} mk / {data.get('count_spt',0)} spt / {data.get('count_st',0)} st)")
 
     if data.get("partitions"):
         print(f"\n{info('┌─ PARTITIONS')}")
