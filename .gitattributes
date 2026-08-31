@@ -1,0 +1,29 @@
+# SpiderLang — own languages
+*.spt linguist-language=SpiderLang linguist-detectable=true
+*.st linguist-language=SpiderLang linguist-detectable=true
+*.tm linguist-language=SpiderLang linguist-detectable=true
+*.spider linguist-language=SpiderLang linguist-detectable=true
+*.spd linguist-language=SpiderLang linguist-detectable=true
+Android.tm linguist-language=SpiderLang
+
+# FFI polyglot — 15+ languages talking via SpiderLang
+*.rs linguist-language=Rust
+*.go linguist-language=Go
+*.java linguist-language=Java
+*.kt linguist-language=Kotlin
+*.swift linguist-language=Swift
+*.rb linguist-language=Ruby
+*.php linguist-language=PHP
+*.lua linguist-language=Lua
+*.dart linguist-language=Dart
+*.cs linguist-language=C#
+*.hs linguist-language=Haskell
+*.zig linguist-language=Zig
+*.ts linguist-language=TypeScript
+*.sh linguist-language=Shell
+*.pl linguist-language=Perl
+*.r linguist-language=R
+*.js linguist-language=JavaScript
+*.cpp linguist-language=C++
+*.c linguist-language=C
+*.h linguist-language=C++

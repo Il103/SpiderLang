@@ -214,8 +214,8 @@ class SpiderFFIModule:
         # For now, we simulate loading. Real impl would delegate to ffi/<lang>.py
         # Try to import via ffi plugins if available
         try:
-            from .ffi import registry
-            handler = registry.get(self.lang.lower())
+            from ..ffi.registry import get as _ffi_get
+            handler = _ffi_get(self.lang.lower())
             if handler:
                 handler.load(self, full)
                 self.loaded = True

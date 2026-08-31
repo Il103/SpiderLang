@@ -1,0 +1,22 @@
+// demo.spt — 15+ languages talking via SpiderLang hub, all linked
+board {
+    arch: "arm64",
+    bootloader: { board_name: "X6886", kernel_pagesize: 4096, boot_partition_size: 64.MB }
+}
+use rust "../../ffi_examples/crypto.rs" as crypto
+use go "../../ffi_examples/server.go" as srv
+use java "../../ffi_examples/Helper.java" as jhelper
+use kotlin "../../ffi_examples/Logic.kt" as klogic
+use swift "../../ffi_examples/Engine.swift" as seng
+use ruby "../../ffi_examples/script.rb" as rbscript
+use php "../../ffi_examples/api.php" as phpapi
+use lua "../../ffi_examples/config.lua" as luacfg
+use dart "../../ffi_examples/ui.dart" as dartui
+use csharp "../../ffi_examples/Utils.cs" as csutils
+use haskell "../../ffi_examples/Algo.hs" as halgo
+use zig "../../ffi_examples/math.zig" as zmath
+use typescript "../../ffi_examples/app.ts" as tsapp
+use shell "../../ffi_examples/helper.sh" as shhelper
+use perl "../../ffi_examples/script.pl" as plscript
+use r "../../ffi_examples/analysis.R" as rana
+print("SpiderLang polyglot hub: 16 languages linked via FFI — all linked")
