@@ -80,9 +80,46 @@ def _payload_size(header, sections):
 
 
 def analyze(path):
-    """Analyze a real boot/recovery/vendor_boot image file."""
+    """Analyze a real boot/recovery/vendor_boot image file.
+
+    The real work is delegated to the native chip, not redone here: Python is
+    only a thin host. If the chip isn't built, this falls back to the portable
+    parser so `spider check` keeps working offline.
+    """
     if not os.path.isfile(path):
         return {"exists": False, "path": path, "magic": None}
+    # Preferred: ask the native chip (parses the header itself).
+    try:
+        from ..chip import chip_check_image
+        native = chip_check_image(path)
+        if native and native.get("magic"):
+            page = native.get("page_size") or 2048
+            kernel = native.get("kernel_bytes") or 0
+            ramdisk = native.get("ramdisk_bytes") or 0
+            file_size = os.path.getsize(path)
+            # page-aligned expected size (matches this module's parser)
+            def page_up(n):
+                return ((n + page - 1) // page) * page if n > 0 else 0
+            expected = page + page_up(kernel) + page_up(ramdisk)
+            missing = max(0, expected - file_size)
+            return {
+                "exists": True, "path": path, "magic": "ANDROID!",
+                "size": file_size, "recognized": True,
+                "magic_ok": True, "header_version": native["header_version"],
+                "page_size": page,
+                "os_version": native["os"] or "0.0.0",
+                "truncated": missing > 0,
+                "valid": (not (missing > 0)) and kernel > 0, "native": True,
+                # derived completeness fields (page-aligned)
+                "kernel_bytes": kernel,
+                "ramdisk_bytes": ramdisk,
+                "second_bytes": 0,
+                "expected_size": expected,
+                "missing_bytes": missing,
+                "file_size": file_size,
+            }
+    except Exception:
+        pass  # fall through to the portable parser
     with open(path, "rb") as f:
         data = f.read()
     total = len(data)
