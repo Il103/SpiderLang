@@ -10,21 +10,16 @@ ecosystem natively — every device, every SoC, every recovery.
 
 ## Vision
 
-Instead of replacing C, C++, Python, JavaScript, Rust, or the hundreds of `.mk`,
-`.fstab` and `.sh` files scattered across Android device trees, SpiderLang reads
-them all **as itself**. A device tree is not a pile of scripts to you — it is
-one structure the language simply understands. The build pipeline is native:
-`.spt -> lexer -> parser -> AST -> IR`, no `.mk` needed. And through a unified
-FFI, SpiderLang can call any other language when you genuinely need it.
+SpiderLang is **built on Soong, completely reworked** — not a wrapper. Instead of depending on `.mk` / `.bp` / `.sh` scattered across device trees, SpiderLang defines **its own formats** and reads everything **as itself**. A device tree is not a pile of scripts — it is one structure the language simply understands.
+
+Pipeline is native: `.spt` / `.st` / `Android.tm` -> lexer -> parser -> AST -> IR, no `.mk` / `.bp` needed. Legacy files are read only for compatibility. Through a unified FFI, SpiderLang can still call C++, Python, Rust when you genuinely need it.
 
 ## Why SpiderLang?
 
 - **The language understands any device tree** — codename, recovery variant,
   partitions, A/B slots and lunch combos are derived *by the language itself*
   from whatever is actually in the tree. No per-device scripts.
-- **Reads every file in a tree natively** — `BoardConfig.spt`, `ofox_*.st`,
-  `omni_*.st`, `pbrp_*.st`, `shrp_*.st`, `device.mk`, `fstab.*`, `vendorsetup.sh`.
-  If there is a `.spt`, that is the tree.
+- **Reads every file in a tree natively** — `BoardConfig.spt`, `Android.tm`, `ofox_*.st`, `omni_*.st`, `pbrp_*.st`, `shrp_*.st`, `fstab.*`. If there is a `.spt` / `Android.tm`, that is the tree. Legacy `device.mk` / `vendorsetup.sh` are read only for compat.
 - **Every recovery supported** — TWRP, OrangeFox, PitchBlack (PBRP), SkyHawk
   (SHRP), RedWolf, and more — each detected from its codename file (`.st`/`.mk`).
 - **First-class file I/O** — `read()`, `readlines()`, `listdir()`, `write()`
@@ -38,21 +33,24 @@ FFI, SpiderLang can call any other language when you genuinely need it.
   `.st` file has its OWN dialect (image / kit / head / patch tokens) — never a
   re-encoding of `.mk`.
 - **`spider check <tree>` is a full recovery diagnostic** — it verifies the
-  image is complete (header, sizes, not truncated), the important flags are
-  present, the `.st` dialect is pure (no `.mk` leaks), and the Soong `.bp` files
-  are sound. Returns a score + verdict (COMPLETE / PARTIAL / NOT READY).
-- **Hidden `magiskboot` & `soong` capabilities** — live quietly inside the
-  engine as first-class builtins (`magiskboot()`, `soong()`), never CLI flags.
-- **Soong (.bp) understanding** — the language reads Android.bp build rules and
-  validates modules by itself.
+   image is complete (header, sizes, not truncated), the important flags are
+   present, the `.st` / `.tm` dialects are pure (no `.mk` / `.bp` leaks), and `Android.tm` modules are sound. Returns a score + verdict (COMPLETE / PARTIAL / NOT READY).
+- **Native `magiskboot` & `soong` capabilities** — live inside the engine as first-class builtins (`magiskboot()`, `soong()`), never CLI flags. The **real brain is native code (C++ + Rust)**, Python is a thin host.
+- **`Android.tm` understanding** — the language reads `Android.tm` (Soong successor) build rules and validates modules by itself. Legacy `Android.bp` is read only for compat.
 - **Safe & Strict** — line:col error reporting, no silent bugs.
 - **Solo built** — designed, specified, and implemented by one person: Beru.
   Lexer, Parser, AST, VM all handwritten from scratch.
 
-## Extension
+## Extensions — Our Own
 
-`.spt` (primary), `.spider`, and the second language `.st` (recovery / image
-definitions with their own dialect, replacing the old codename `.mk` files).
+SpiderLang is independent. We use **our own file formats**, not others'.
+
+- `.spt` — primary language (replaces `BoardConfig.mk` / `Android.mk`)
+- `.st` — second language for recovery & image definitions (replaces `omni_*.mk`, `ofox_*.mk`, `pbrp_*.mk`, `shrp_*.mk`)
+- `Android.tm` / `.tm` — native build rules (Soong successor, replaces `Android.bp`)
+- `.spider` / `.spd` — general SpiderLang source
+
+Legacy `.mk` / `.bp` / `.sh` are read **for compatibility only** — the source of truth is `.spt` / `.st` / `.tm`.
 
 ## Quick Start
 
@@ -193,9 +191,13 @@ src/spider/
 ├── knowledge/    // What the language natively understands about Android
 │   ├── recoveries.py // every recovery + its codename/flags
 │   ├── images.py     // recovery.img / vendor_boot.img / boot.img + flags
-│   └── soong.py      // Soong (.bp) module types & properties
-├── tools/        // hidden native tool capabilities
-│   └── magisk.py     // magiskboot — boot image header integrity (hidden)
+│   └── soong.py      // Android.tm (Soong successor) modules — legacy .bp read for compat
+├── native/       // Real brain — C++ + Rust (Python is thin host)
+│   ├── src/tm/       // Android.tm lexer/parser/validate (C++)
+│   ├── src/chip/     // boot header + magiskboot (C++)
+│   └── chip/         // bundled magiskboot (arm64/arm/x86)
+├── tools/        // native tool capabilities
+│   └── magisk.py     // magiskboot — boot image header integrity
 ├── fmt/          // dialects & source formats
 │   └── st_dialect.py // the .st second-language dialect (own tokens)
 ├── check/        // enhanced recovery diagnostics (spider check)
