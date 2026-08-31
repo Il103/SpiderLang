@@ -1,6 +1,4 @@
-// SpiderLang Native — Android.tm Lexer (Handmade, no flex/yacc)
-// .tm is the Spider-owned build-definition format (the Soong successor).
-// This scanner turns Android.tm source into a token stream for the parser.
+// Android.tm scanner. Turns Android.tm source text into a token stream.
 #pragma once
 #include <string>
 #include <vector>

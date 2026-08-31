@@ -1,9 +1,5 @@
-// SpiderLang Native — the chip (hidden tools baked into the binary).
-//
-// The chip owns the "invisible machinery": locating + running the bundled
-// magiskboot for all four target ABIs, and a small native boot-header reader
-// for instant checks. It never appears in the public CLI surface; commands
-// like `check` reach it silently.
+// Bundled tool helpers: locating/running the shipped magiskboot binaries and
+// a small boot-header reader used for instant image checks.
 #pragma once
 #include <string>
 #include <vector>

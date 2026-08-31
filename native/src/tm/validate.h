@@ -1,6 +1,4 @@
-// SpiderLang Native — Android.tm Validator
-// Knows the set of module types .tm supports and which properties each requires.
-// Runs semantic checks over a parsed File; collects issues (owned by the chip).
+// Android.tm validator. Checks parsed modules against the known type table.
 #pragma once
 #include <string>
 #include <vector>

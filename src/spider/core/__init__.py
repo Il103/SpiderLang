@@ -1,6 +1,5 @@
 """
-SpiderLang core — the hand-built language engine (lexer, parser, AST, VM).
-Everything is from scratch: no eval, no exec, no ANTLR, no PLY.
+SpiderLang core — the language engine (lexer, parser, AST, VM).
 """
 from .lexer import tokenize, Lexer
 from .parser import parse

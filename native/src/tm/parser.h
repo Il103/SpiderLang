@@ -1,5 +1,4 @@
-// SpiderLang Native — Android.tm Parser
-// Recursive-descent over the token stream; builds a File of modules.
+// Android.tm parser. Recursive-descent over the token stream into modules.
 #pragma once
 #include <memory>
 #include <string>

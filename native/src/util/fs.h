@@ -1,4 +1,4 @@
-// SpiderLang Native — filesystem & string helpers (no external deps)
+// Filesystem + string helpers.
 #pragma once
 #include <string>
 #include <vector>

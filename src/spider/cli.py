@@ -47,8 +47,8 @@ SPIDER_BANNER = """\
   |\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|
    \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_
 
-                  / _ \\   SpiderLang  v3.0   one language, every device
-                \\_\\(_)/_/   crafted from scratch by Beru
+                  / _ \   SpiderLang  v3.0   one language, every device
+                \_\\(_)/_/   Android device tree language
                  _// \\\\_    reads the whole Android tree natively
                   /   \\
                  /^*^\\
@@ -358,6 +358,8 @@ def cmd_tree(args):
 
 def cmd_lunch(args):
     print_banner("lunch", "bind a device tree / codename")
+    # Spider mark — the user asked for the spider logo in lunch
+    print(f"{DIM}{SPIDER_LOGO}{RESET}")
     device = args.device or "X6886"
     print(f"{MAGENTA}│  lunch → {device}{RESET}")
     # Locate the device tree (recognized by BoardConfig.spt / Android.spt, or any tree)
@@ -393,14 +395,55 @@ def cmd_lunch(args):
     data = _understand(tree)
     if data.get("codename"):
         device = data["codename"]
-    variant = data["recoveries"][0] if data["recoveries"] else "twrp"
 
+    # ── Enriched context: try to parse BoardConfig.spt for Soong-like details ──
+    board_data = {}
+    spt_file = None
+    for cand in [tree / "BoardConfig.spt", tree / "BoardConfig.spider", tree / "Android.spt"]:
+        if cand.exists():
+            spt_file = cand
+            break
+    if spt_file:
+        try:
+            _src = spt_file.read_text(encoding="utf-8")
+            _interp, _prog = run_program(_src, str(spt_file), str(tree))
+            board_data = _interp.board_data or {}
+        except Exception:
+            board_data = {}
+    # variant: prefer language-detected, else BoardConfig.spt recovery.type, else twrp
+    variant = data["recoveries"][0] if data["recoveries"] else None
+    if not variant:
+        _rec = board_data.get("recovery") if isinstance(board_data.get("recovery"), dict) else None
+        variant = (_rec.get("type") if _rec else None) or "twrp"
+    # arch / pagesize / boot size from board_data if available
+    _bl = board_data.get("bootloader", {}) if isinstance(board_data.get("bootloader"), dict) else {}
+    arch = board_data.get("arch") or _bl.get("arch") or "arm64"
+    arch_variant = board_data.get("arch_variant") or _bl.get("arch_variant") or "armv8-a"
+    pagesize = _bl.get("kernel_pagesize") or 4096
+    boot_sz = _bl.get("boot_partition_size")
+    rec_sz = _bl.get("recovery_partition_size")
+    # images & lunch combos already understood by the language
+    images = data.get("images") or {}
+    lunch_combos = data.get("lunch") or []
+    nparts = len(data["partitions"])
+    # boot class: modern if vendor_boot/init_boot present, else legacy
+    boot_class = "modern (GKI/vendor_boot)" if any(k in images for k in ("vendor_boot","init_boot")) else "legacy (boot+recovery)"
+    if spt_file and "vendor_boot" in str(board_data):
+        boot_class = "modern (GKI/vendor_boot)"
+
+    _variant_src = "auto-detected by the language" if data["recoveries"] else ("from BoardConfig.spt" if board_data.get("recovery") else "default twrp")
     print(f"\n  device   : {device}")
     print(f"  tree     : {tree}")
-    print(f"  variant  : {variant}  {dim('- auto-detected by the language') if data['recoveries'] else ''}")
     print(f"  codename : {data.get('codename') or device}")
-    nparts = len(data["partitions"])
-    print(f"  partitions: {nparts}  {dim('- from fstab, read natively') if nparts else ''}")
+    print(f"  variant  : {variant}  {dim('- '+_variant_src)}")
+    print(f"  arch     : {arch} / {arch_variant}")
+    print(f"  partitions: {nparts}  {dim('- from fstab, read natively') if nparts else dim('- no fstab yet')}")
+    print(f"  images   : {', '.join(sorted(images)) if images else dim('recovery (default) — no .st recipe yet')}")
+    if lunch_combos:
+        print(f"  lunch    : {', '.join(lunch_combos)}  {dim('- from vendorsetup.sh')}")
+    print(f"  boot     : {boot_class}  {dim(f'pagesize {pagesize}')}")
+    if boot_sz:
+        print(f"  sizes    : boot {boot_sz}  /  recovery {rec_sz or dim('n/a')}")
 
     found, _ = detect_device_tree(tree)
     print(f"\n{info('┌─ DEVICE TREE')}")
@@ -409,30 +452,85 @@ def cmd_lunch(args):
     for name, desc in found:
         print(f"   {ok('[*]')} {name:<18} {dim('- '+desc)}")
 
-    # AOSP-style lunch steps
-    print(f"\n{info('┌─ LUNCH')}")
+    # ── Soong-style config dump (what AOSP lunch prints) ──
+    print(f"\n{info('┌─ SOONG CONFIG  (what lunch has bound)')}")
+    print(f"   {dim('PLATFORM_VERSION:')}        SpiderLang {VERSION}")
+    print(f"   {dim('TARGET_PRODUCT:')}          omni_{device}" if not lunch_combos else f"   {dim('TARGET_PRODUCT:')}          {lunch_combos[0]}")
+    print(f"   {dim('TARGET_DEVICE:')}           {device}")
+    print(f"   {dim('TARGET_ARCH:')}             {arch}")
+    print(f"   {dim('TARGET_ARCH_VARIANT:')}     {arch_variant}")
+    print(f"   {dim('TARGET_BUILD_VARIANT:')}    userdebug")
+    print(f"   {dim('BOARD_KERNEL_PAGESIZE:')}   {pagesize}")
+    if boot_sz:
+        print(f"   {dim('BOARD_BOOTIMAGE_PARTITION_SIZE:')} {boot_sz}")
+    if rec_sz:
+        print(f"   {dim('BOARD_RECOVERYIMAGE_PARTITION_SIZE:')} {rec_sz}")
+    print(f"   {dim('RECOVERY_VARIANT:')}        {variant}")
+    print(f"   {dim('SPIDER_BOARD:')}            {spt_file.name if spt_file else dim('no BoardConfig.spt')}")
+    if images:
+        print(f"   {dim('DECLARED_IMAGES:')}         {', '.join(sorted(images))}")
+
+    # ── Build target panel (Soong-like: what will be forged) ──
+    print(f"\n{info('┌─ BUILD TARGET  (what Soong will forge)')}")
+    # primary recovery target
+    from .knowledge import images as _IMG
+    _it = _IMG.by_name(variant) or _IMG.by_name("recovery")
+    if _it:
+        print(f"   {ok('[RECOVERY]')}  {variant:<12} {dim('->')} {ok(_it.ext):<16} {dim(f'(header v{_it.header_ver}  — {_it.moniker})')}")
+    else:
+        print(f"   {ok('[RECOVERY]')}  {variant:<12} {dim('->')} {ok('recovery.img')}")
+    # also show boot/vendor_boot if declared or inferrable
+    for img_name in ("boot", "vendor_boot", "init_boot"):
+        if img_name in images:
+            it2 = _IMG.by_name(img_name)
+            tag = it2.tag if it2 else img_name.upper()
+            ext = it2.ext if it2 else f"{img_name}.img"
+            hv = f"header v{it2.header_ver}" if it2 else ""
+            print(f"   {info(f'[{tag}]'): <18} {img_name:<12} {dim('->')} {info(ext):<16} {dim(hv)}")
+    if not images:
+        # show defaults that will be built even without .st
+        print(f"   {dim('[BOOT]      ')}  boot         {dim('->')} {dim('boot.img')}         {dim('(from BoardConfig defaults)')}")
+        print(f"   {dim('[VENDOR_BOOT]')}  vendor_boot  {dim('->')} {dim('vendor_boot.img')}  {dim('(GKI, if kernel declares it)')}")
+    if nparts:
+        for p in data["partitions"][:6]:
+            ab = dim(" [A/B]") if p["a_b"] else ""
+            print(f"   {dim('partition:')} {p['partition']:<14} {dim(p['type']):<8} {dim('- '+p['role'])}{ab}")
+
+    # ── AOSP-style lunch steps (now verbose — what each step did) ──
+    print(f"\n{info('┌─ LUNCH  (6 steps — what was done)')}")
+    # pre-compute verbose step lines
+    _tree_detail = f"found {tree} ({spt_file.name if spt_file else 'no spt'})"
+    _spt_detail = f"arch {arch}, pagesize {pagesize}, {len(board_data)} sections" if board_data else "no BoardConfig.spt parsed"
+    _has_variant = bool(data["recoveries"] or board_data.get("recovery"))
+    _mk_detail = f"{variant} ({data['codename'] or device})" if _has_variant else f"{variant} (default)"
+    _fstab_detail = f"{nparts} partitions" if nparts else "no fstab — add recovery.fstab"
+    _lunch_detail = f"{len(lunch_combos)} combos: {', '.join(lunch_combos[:3])}" if lunch_combos else "no vendorsetup.sh — using default combo"
+    _size_detail = f"boot {boot_sz or '64.MB default'} validated (B->EB)" if boot_sz else "B->EB units validated (64.MB default)"
     steps = [
-        "locating device tree",
-        "reading BoardConfig.spt native",
-        f"reading codename mk ({variant}) native",
-        "reading recovery.fstab partitions",
-        "detecting lunch combos (vendorsetup.sh)",
-        "validating size units (B -> EB)",
+        ("locating device tree", _tree_detail),
+        ("reading BoardConfig.spt native", _spt_detail),
+        (f"reading codename mk ({variant}) native", _mk_detail),
+        ("reading recovery.fstab partitions", _fstab_detail),
+        ("detecting lunch combos (vendorsetup.sh)", _lunch_detail),
+        ("validating size units (B -> EB)", _size_detail),
     ]
-    for i, s in enumerate(steps, 1):
-        time.sleep(0.12)
-        print(f"  [ {i}/{len(steps)} ] {s:<50} {ok('... done')}")
+    for i, (s, detail) in enumerate(steps, 1):
+        time.sleep(0.10)
+        print(f"  [ {i}/{len(steps)} ] {s:<42} {dim('— '+detail):<40} {ok('✓ done')}")
 
     out_dir = pathlib.Path("out")
     out_dir.mkdir(exist_ok=True)
     cfg = {"device": device, "codename": data.get("codename") or device,
-           "tree": str(tree), "arch": "arm64",
-           "recovery": variant, "partitions": len(data["partitions"]),
+           "tree": str(tree), "arch": arch, "arch_variant": arch_variant,
+           "recovery": variant, "images": sorted(images.keys()) if images else ["recovery"],
+           "boot_class": boot_class, "pagesize": pagesize,
+           "partitions": len(data["partitions"]),
+           "lunch_combos": lunch_combos,
            "version": VERSION, "ts": time.time()}
     (out_dir / "lunch.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
-    print(f"\n  {ok('lunch complete')} -> saved out/lunch.json")
+    print(f"\n  {ok('lunch complete')} -> saved out/lunch.json  {dim(f'({len(cfg)} keys, {arch}/{variant})')}")
     print(f"\n{info('next:')}")
-    print(f"   spider build {variant} --tree {tree}")
+    print(f"   spider build {variant} --tree {tree}   {dim('# forge ' + (_IMG.by_name(variant).ext if _IMG.by_name(variant) else 'recovery.img'))}")
 
 def cmd_build(args):
     from .knowledge import images as IMG

@@ -1,5 +1,4 @@
-// SpiderLang Native — Android.tm AST
-// A .tm "module" is a named build unit with a type and ordered properties.
+// Android.tm AST. A "module" is a named build unit with a type and props.
 #pragma once
 #include <map>
 #include <memory>

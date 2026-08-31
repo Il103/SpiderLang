@@ -1,12 +1,10 @@
 """
 SpiderLang — the chip host.
 
-The chip is the native C++ binary that owns the real work (Android.tm parsing,
-boot-image header verification, and the bundled magiskboot). This module is a
-thin Python host: it finds the native binary, builds it if needed, and exposes
-small functions that call it and turn its output into plain Python values.
+The chip is the native C++ binary that does the real work (Android.tm parsing,
+boot-image header verification, and the bundled magiskboot). This module finds
+or builds the native binary, calls it, and returns its output as plain values.
 
-Python is never the brain here — it only carries requests to the chip and back.
 If the native binary cannot be built/run, every function degrades gracefully
 and reports an error instead of re-implementing the logic in Python.
 """

@@ -1,6 +1,6 @@
 """
-SpiderLang Parser — Handwritten Recursive Descent from Scratch
-No external parsing libraries, built entirely by hand.
+SpiderLang Parser — Recursive Descent.
+No external parsing libraries.
 """
 from .lexer import Token, TokenType
 from .ast_nodes import *

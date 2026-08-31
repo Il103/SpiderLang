@@ -1,16 +1,5 @@
-//=====================================================================
-//  SpiderLang — the chip
-//=====================================================================
-//  The native heart of SpiderLang. A single self-contained binary that
-//  owns the things the public surface never shows: the Android.tm build
-//  parser/validator and the bundled magiskboot tooling.
-//
-//  It is written in C++17, from scratch, and builds with plain g++ — no
-//  cmake, no external libraries. Python is only ever a thin host that
-//  calls this binary; it is not the brain.
-//
-//  Built by Beru.
-//=====================================================================
+// Native tools: Android.tm build validation + boot image header checks.
+// Single binary, no external dependencies. Build with `make` in native/.
 #include <unistd.h>
 
 #include <fstream>
@@ -28,11 +17,11 @@
 using namespace spider;
 
 static const char* BANNER =
-    "       / \\_         \n"
-    "     _\\\\(_)/_/   SpiderLang  —  the chip\n"
-    "      _//\"\\\\_    native core (C++17, from scratch)\n"
+    "       / \\_        SpiderLang tools\n"
+    "     _\\\\(_)/_/\n"
+    "      _//\"\\\\_    Android.tm validation\n"
     "        /   \\\n"
-    "       /\\/\\/\\    Android.tm + magiskboot, hidden tools\n"
+    "       /\\/\\/\\    boot image checks\n"
     "       \\__/ \n";
 
 static void usage() {
@@ -40,10 +29,10 @@ static void usage() {
         "usage: spider <command> [args]\n"
         "\n"
         "  tm <file.tm>            parse + validate an Android.tm build file\n"
-        "  check <image> [size]    verify a boot/recovery image header (chip)\n"
-        "  chip <magisk args...>   run the bundled magiskboot (hidden tool)\n"
-        "  info                    show chip (magiskboot) presence & ABI\n"
-        "  version                 print the Spider version\n";
+        "  check <image> [size]    verify a boot/recovery image header\n"
+        "  chip <magisk args...>   run the bundled magiskboot\n"
+        "  info                    show bundled magiskboot presence & ABI\n"
+        "  version                 print the version\n";
 }
 
 static int cmd_tm(const std::string& path) {

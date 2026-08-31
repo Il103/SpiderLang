@@ -1,6 +1,5 @@
 """
-SpiderLang tools — native Android build tool knowledge baked into the language.
-magiskboot is a hidden capability living inside the engine (never a CLI flag).
+SpiderLang tools — Android build tool knowledge baked into the language.
 """
 from .magisk import peek_header, analyze, verify_sections
 

@@ -1,7 +1,7 @@
 """
 SpiderLang knowledge — everything the language natively understands about the
-Android ecosystem: every recovery, every boot/recovery image, Soong (.bp) build
-rules, and the hidden magiskboot tool — all read by the language itself.
+Android ecosystem: every recovery, every boot/recovery image, and Soong (.bp)
+build rules — all read by the language itself.
 """
 from .recoveries import (
     Recovery, RECOVERIES, recovery_from_mk, recovery_from_flag,
