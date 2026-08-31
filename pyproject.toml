@@ -1,0 +1,18 @@
+[project]
+name = "spiderlang"
+version = "0.1.0"
+description = "SpiderLang — The 1601st Programming Language by Beru. Universal FFI, Android Recovery DSL."
+authors = [{name="Beru"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+spider = "spider.cli:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

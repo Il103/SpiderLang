@@ -1,0 +1,47 @@
+// BoardConfig.spt — device/infinix/X6886 — Real device
+// This is the file that will be used to build TWRP for Infinix Hot 40 Pro (X6886)
+// No .mk needed — spider builds directly from here
+
+board {
+    arch: "arm64",
+    arch_variant: "armv8-a",
+    cpu_abi: "arm64-v8a",
+    cpu_variant: "cortex-a55",
+
+    bootloader: {
+        board_name: "X6886",
+        kernel_pagesize: 4096,
+        boot_partition_size: 64.MB,
+        recovery_partition_size: 64.MB,
+        super_partition_size: 9128.MB
+    },
+
+    kernel: {
+        base: "0x40078000",
+        cmdline: "bootopt=64S3,32N2,64N2 androidboot.selinux=permissive",
+        image_name: "Image.gz",
+        separated_dtbo: true
+    },
+
+    recovery: {
+        type: "twrp",
+        include_crypto: true,
+        exclude_apex: true,
+        has_mtp: true,
+        brightness_path: "/sys/class/leds/lcd-backlight/brightness",
+        flags: [
+            "TW_EXCLUDE_APEX",
+            "TW_HAS_MTP",
+            "TW_INCLUDE_CRYPTO",
+            "TW_INCLUDE_CRYPTO_FBE",
+            "TW_BRIGHTNESS_PATH",
+            "TW_EXCLUDE_DEFAULT_USB_INIT",
+            "TW_EXTRA_LANGUAGES",
+            "TW_USE_TOOLBOX"
+        ]
+    }
+}
+
+use cpp "../../../validators/partition_check.cpp" as checker
+checker.verify_sizes(board.bootloader)
+print("Building TWRP for X6886 — boot {board.bootloader.boot_partition_size}")

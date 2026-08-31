@@ -1,0 +1,41 @@
+name: SpiderLang CI
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e .
+      - name: Check syntax
+        run: |
+          python -m spider check examples/hello.spt
+          python -m spider check examples/BoardConfig.spt
+      - name: Run hello
+        run: python -m spider run examples/hello.spt
+      - name: Test sizes
+        run: |
+          python -c "
+          from spider.interpreter import SpiderSize
+          assert SpiderSize(64*1024*1024) == SpiderSize(65536*1024)
+          assert SpiderSize(1*1024**3).to('MB') == 1024
+          print('Size tests passed')
+          "
+      - name: Build TWRP (native)
+        run: |
+          python -m spider lunch X6886 --tree examples
+          python -m spider build twrp --tree examples
+          cat out/board.json
