@@ -100,6 +100,28 @@ _SHOW = r"""
 """
 _SHOW_K = _wrap(BLUE, _SHOW)
 
+_CHECK = r"""
+       _____
+      / __  \     C H E C K
+     / /  \  \    diagnostics
+    | |    | |    complete? flags? sizes?
+    | |    | |    score /100
+     \ \__/  /
+      \.___ /
+"""
+_CHECK_K = _wrap(CYAN, _CHECK)
+
+_INIT = r"""
+      .--.
+     |    |     I N I T
+     |    |     scaffold
+     |    |     device tree
+     |____|
+      /  \
+     /    \
+"""
+_INIT_K = _wrap(GREEN, _INIT)
+
 THEMES = {
     "lunch": dict(accent=MAGENTA, accent2=WHITE, tag="LUNCH", emblem=_LUNCH_K,
                   title="SPIDER LUNCH SELECTOR"),
@@ -111,6 +133,10 @@ THEMES = {
                   title="SPIDER DEVICE TREE"),
     "show":  dict(accent=BLUE, accent2=CYAN, tag="SHOW", emblem=_SHOW_K,
                   title="SPIDER SOURCE VIEWER"),
+    "check": dict(accent=CYAN, accent2=WHITE, tag="CHECK", emblem=_CHECK_K,
+                  title="SPIDER RECOVERY CHECK"),
+    "init":  dict(accent=GREEN, accent2=CYAN, tag="INIT", emblem=_INIT_K,
+                  title="SPIDER DEVICE INIT"),
 }
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "spiderlang"
-version = "0.1.0"
+version = "3.0.0"
 description = "SpiderLang — one language, every Android device. Native recovery build DSL, universal FFI."
 authors = [{name="Beru"}]
 readme = "README.md"

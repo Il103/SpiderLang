@@ -34,7 +34,17 @@ FFI, SpiderLang can call any other language when you genuinely need it.
 - **Size system** — `64.MB == 65536.KB == 67108864.B` — B to EB (binary 1024).
 - **Android Recovery DSL** — `board { ... }` replaces `BoardConfig.mk`; the
   **second language `.st`** defines the images & flags (`image "recovery" { }`,
-  `image "vendor_boot" { }`, `image "boot" { }`) for any codename recovery.
+  `image "vendor_boot" { }`, `image "boot" { }`) for any codename recovery. A
+  `.st` file has its OWN dialect (image / kit / head / patch tokens) — never a
+  re-encoding of `.mk`.
+- **`spider check <tree>` is a full recovery diagnostic** — it verifies the
+  image is complete (header, sizes, not truncated), the important flags are
+  present, the `.st` dialect is pure (no `.mk` leaks), and the Soong `.bp` files
+  are sound. Returns a score + verdict (COMPLETE / PARTIAL / NOT READY).
+- **Hidden `magiskboot` & `soong` capabilities** — live quietly inside the
+  engine as first-class builtins (`magiskboot()`, `soong()`), never CLI flags.
+- **Soong (.bp) understanding** — the language reads Android.bp build rules and
+  validates modules by itself.
 - **Safe & Strict** — line:col error reporting, no silent bugs.
 - **Solo built** — designed, specified, and implemented by one person: Beru.
   Lexer, Parser, AST, VM all handwritten from scratch.
@@ -42,7 +52,7 @@ FFI, SpiderLang can call any other language when you genuinely need it.
 ## Extension
 
 `.spt` (primary), `.spider`, and the second language `.st` (recovery / image
-definitions, replacing the old codename `.mk` files).
+definitions with their own dialect, replacing the old codename `.mk` files).
 
 ## Quick Start
 
@@ -159,6 +169,8 @@ All binary (1024):
 spider info <path>               Full device report (language understanding)
 spider tree <path>               Device tree + partitions + A/B + codename
 spider lunch <device>            Select device (auto-detects codename+variant)
+spider check <tree>              FULL recovery diagnostic (score + verdict)
+spider check <file.st>           Syntax + .st-dialect check
 spider build <target> --tree .. Build any recovery OR image type
 spider build recovery --tree .. Build recovery.img  (header v0-2)
 spider build vendor_boot --tree ..  Build vendor_boot.img (header v3/v4)
@@ -166,27 +178,34 @@ spider build boot --tree ..     Build boot.img (header v0-4)
 spider build twrp --tree <path> Build TWRP recovery natively from .spt
 spider run <file.spt>           Run a SpiderLang file (.spt / .st)
 spider convert <file.spt> --to mk  Convert .spt to .mk (legacy)
-spider check <file.spt>         Check syntax only
 ```
 
 ## Architecture
 
 ```
 src/spider/
-├── lexer.py      // Handmade, char-by-char, no regex libs
-├── parser.py     // Recursive-descent, handmade
-├── ast_nodes.py  // All nodes
-├── interpreter.py // Tree-walk VM + SpiderSize + board DSL + file I/O
-│                  //   + understand() — reads any device tree natively
-├── recoveries.py // Language knowledge: every recovery + its codename/flags
-├── images.py     // Language knowledge: recovery.img / vendor_boot.img / boot.img
-│                  //   + every header version & flag set
-├── themes.py     // Per-command CLI identities (logos + colours)
+├── core/         // The hand-built language engine
+│   ├── lexer.py      // Handmade, char-by-char, no regex libs
+│   ├── parser.py     // Recursive-descent + board/image DSL
+│   ├── ast_nodes.py  // All nodes
+│   └── interpreter.py// Tree-walk VM + SpiderSize + file I/O
+│                      //   + understand() + hidden magiskboot()/soong()
+├── knowledge/    // What the language natively understands about Android
+│   ├── recoveries.py // every recovery + its codename/flags
+│   ├── images.py     // recovery.img / vendor_boot.img / boot.img + flags
+│   └── soong.py      // Soong (.bp) module types & properties
+├── tools/        // hidden native tool capabilities
+│   └── magisk.py     // magiskboot — boot image header integrity (hidden)
+├── fmt/          // dialects & source formats
+│   └── st_dialect.py // the .st second-language dialect (own tokens)
+├── check/        // enhanced recovery diagnostics (spider check)
+│   └── engine.py     // completeness / flags / sizes / score / verdict
 ├── ffi/          // Universal FFI plugins
 │   ├── registry.py
 │   ├── python.py
 │   ├── cpp.py
 │   └── js.py
+├── themes.py     // Per-command CLI identities (logos + colours)
 └── cli.py        // spider binary with handcrafted ASCII per command
 ```
 

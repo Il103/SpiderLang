@@ -287,6 +287,13 @@ class Interpreter:
         # Android/system tree understanding — a core language capability, not a script.
         self.globals.define("understand", self.builtin_understand)
 
+        # hidden native tool capability: magiskboot lives quietly inside the
+        # engine (never a CLI flag) — inspect/verify boot & recovery images.
+        self.globals.define("magiskboot", self.builtin_magiskboot)
+
+        # Soong (.bp) understanding — the language reads Android.bp by itself.
+        self.globals.define("soong", self.builtin_soong)
+
         # size helpers
         self.globals.define("bytes", lambda x: x.bytes if isinstance(x, SpiderSize) else int(x))
 
@@ -333,6 +340,39 @@ class Interpreter:
             return []
 
     # === Android build-tree understanding (a core language capability) ===
+
+    def builtin_magiskboot(self, path=".", action="verify"):
+        """Hidden native capability: inspect & verify a boot/recovery image.
+
+        Lives inside the engine (never a CLI flag). Returns the image header,
+        section sizes, and a completeness verdict.
+        """
+        from ..tools import analyze, verify_sections
+        full = os.path.abspath(self._resolve(path))
+        action = (action or "verify").lower()
+        head = analyze(full)
+        if not head.get("recognized"):
+            return head
+        if action in ("verify", "check"):
+            head["verify"] = verify_sections(head)
+        elif action == "header":
+            head = {k: head.get(k) for k in
+                    ("magic", "page_size", "header_version", "kernel_size",
+                     "ramdisk_size", "os_version", "os_patch_level", "valid")}
+        return head
+
+    def builtin_soong(self, path="Android.bp"):
+        """Hidden native capability: understand a Soong/.bp build file."""
+        from ..knowledge.soong import analyze_file, counts
+        full = os.path.abspath(self._resolve(path))
+        try:
+            with open(full, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except Exception:
+            return {"exists": False, "path": full}
+        mods = analyze_file(text)
+        agg = counts(mods)
+        return {"exists": True, "path": full, "modules": mods, **agg}
 
     def builtin_understand(self, path="."):
         """Generically read and understand any device tree. Returns a rich dict."""

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SpiderLang CLI — v2.0
+SpiderLang CLI — v3.0
 Reads the whole Android build tree natively: .spt, every recovery codename .mk,
 fstab, vendorsetup — one language, every device. Handcrafted ASCII, no emojis.
 Commands:
@@ -14,6 +14,7 @@ Commands:
 """
 import argparse
 import os
+import re
 import sys
 import pathlib
 import time
@@ -37,7 +38,7 @@ def err(s):  return f"{RED}{s}{RESET}"
 def info(s): return f"{CYAN}{s}{RESET}"
 def dim(s):  return f"{DIM}{s}{RESET}"
 
-VERSION = "2.0"
+VERSION = "3.0"
 
 # ── Pure-ASCII Spider banners (no emojis, box-drawing + block chars only) ──
 SPIDER_BANNER = """\
@@ -46,7 +47,7 @@ SPIDER_BANNER = """\
   |\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|
    \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_
 
-                  / _ \\   SpiderLang  v2.0   one language, every device
+                  / _ \\   SpiderLang  v3.0   one language, every device
                 \\_\\(_)/_/   crafted from scratch by Beru
                  _// \\\\_    reads the whole Android tree natively
                   /   \\
@@ -126,7 +127,7 @@ SIZE_HL_RE = None
 
 def highlight_line(line):
     """Colorize a single line of SpiderLang using the tokenizer for that line."""
-    from .lexer import tokenize
+    from .core.lexer import tokenize
     out_parts = []
     try:
         tokens = tokenize(line, "<hl>")
@@ -249,9 +250,9 @@ def build_device_tree_node(path):
 # ── Helpers ───────────────────────────────────────────────────────────────
 def run_program(source, filename, base_dir):
     """Runs a .spt program and returns the interpreter."""
-    from .lexer import tokenize
-    from .parser import parse
-    from .interpreter import Interpreter
+    from .core.lexer import tokenize
+    from .core.parser import parse
+    from .core.interpreter import Interpreter
     tokens = tokenize(source, filename)
     program = parse(tokens, filename)
     interp = Interpreter(base_dir=base_dir, filename=filename)
@@ -292,7 +293,7 @@ def cmd_run(args):
 
 def _understand(path):
     """One entry point: the language understands any device tree."""
-    from .interpreter import Interpreter
+    from .core.interpreter import Interpreter
     return Interpreter(base_dir=".").builtin_understand(str(path))
 
 def _default_tree():
@@ -305,6 +306,15 @@ def _default_tree():
     if (pathlib.Path("BoardConfig.spt").exists() or pathlib.Path("Android.spt").exists()):
         return pathlib.Path(".")
     return None
+
+def _default_init_path(device):
+    """Where to scaffold a new tree when the user gives no --path."""
+    brands = ["infinix", "samsung", "xiaomi", "google", "oppo", "motorola", "oneplus", "realme"]
+    for cand in (pathlib.Path(f"device/{b}/{device}") for b in brands):
+        if cand.exists():
+            return cand
+    # default to the first convention used in the repo
+    return pathlib.Path(f"device/infinix/{device}")
 
 def cmd_tree(args):
     print_banner("tree", "device tree / codename / partitions")
@@ -425,7 +435,7 @@ def cmd_lunch(args):
     print(f"   spider build {variant} --tree {tree}")
 
 def cmd_build(args):
-    from . import images as IMG
+    from .knowledge import images as IMG
     from . import themes as T
     print_banner("build", "recovery.img / vendor_boot.img / boot.img")
     tree = pathlib.Path(args.tree) if args.tree else None
@@ -449,7 +459,7 @@ def cmd_build(args):
     _und = _understand(tree)
 
     # what is being built: a recovery target OR an image type
-    from .recoveries import all_recoveries
+    from .knowledge.recoveries import all_recoveries
     _recos = all_recoveries()
     target = None
     requested_image = None
@@ -507,7 +517,7 @@ def cmd_build(args):
         print(f"   {tagcol}└─✓ header version {it.header_ver}   {T.dim(it.moniker)}{RESET}\n")
 
     try:
-        from .interpreter import SpiderSize
+        from .core.interpreter import SpiderSize
         interp, program = run_program(spt_file.read_text(encoding="utf-8"), str(spt_file), str(spt_file.parent))
         board = interp.board_data or {}
         print(f"{info('┌─ BOARD (parsed)')}")
@@ -619,7 +629,7 @@ def cmd_build(args):
         sys.exit(1)
 
 def transpile_to_mk(board, target):
-    from .interpreter import SpiderSize
+    from .core.interpreter import SpiderSize
     lines = [
         f"# LEGACY COMPAT - SpiderLang v{VERSION} (not used)",
         f"# target: {target}",
@@ -649,24 +659,75 @@ def transpile_to_mk(board, target):
     return "\n".join(lines)
 
 def cmd_check(args):
-    src = pathlib.Path(args.file)
-    source = src.read_text(encoding="utf-8")
-    print_banner()
-    print(f"\n{info('checking')} {src} ...\n")
-    from .lexer import tokenize
-    from .parser import parse
-    tokens = tokenize(source, str(src))
+    from . import themes as T
+    target = pathlib.Path(args.file)
+    print_banner("check", str(args.file or ""))
+
+    # If a directory -> FULL recovery diagnosis (complete? flags? sizes? images?)
+    if target.is_dir():
+        return _cmd_check_tree(target)
+
+    # Otherwise -> syntax check (plus dialect check for .st files)
+    source = target.read_text(encoding="utf-8")
+    print(f"\n{info('checking')} {target} ...\n")
+    from .core.lexer import tokenize
+    from .core.parser import parse
+    tokens = tokenize(source, str(target))
     print(f"  {ok('[ OK ]')} lexer : {len(tokens)} tokens")
-    program = parse(tokens, str(src))
+    program = parse(tokens, str(target))
     print(f"  {ok('[ OK ]')} parser: {len(program.statements)} statements")
     for stmt in program.statements:
         if stmt.__class__.__name__ == "BoardStmt":
-            print(f"  {ok('[ OK ]')} board : {len(stmt.fields)} sections")
+            print(f"  {ok('[ OK ]')} block : {len(stmt.fields)} sections")
+    if target.suffix == ".st":
+        from .fmt.st_dialect import classify, mk_leaks
+        leaks = mk_leaks(source)
+        if leaks:
+            print(f"  {warn('[ warn ]')} dialect: makefile-isms leaked ({', '.join(leaks)})")
+        else:
+            print(f"  {ok('[ OK ]')} dialect: `.st` second language, pure (no .mk leaks)")
+        from .knowledge.soong import analyze_file
+        # also surface any image blocks it declares
+        images = [i for i in ("recovery", "boot", "vendor_boot", "init_boot")
+                  if re.search(rf'image\s+"{i}"', source)]
+        if images:
+            print(f"  {ok('[ OK ]')} images : {', '.join(images)} declared")
     print(f"\n  {ok('syntax OK - no errors')}")
 
+
+def _cmd_check_tree(tree):
+    """FULL recovery diagnostic — the 'فشيخ' check."""
+    from .check import diagnose
+    from . import themes as T
+
+    report = diagnose(tree)
+    root = report.get("root", str(tree))
+    verdict = report["verdict"]
+    vcol = {"COMPLETE": ok, "PARTIAL": warn, "NOT READY": err}[verdict]
+
+    print(f"\n  {info('DEVICE RECOVERY CHECK')}  {T.dim(str(tree))}\n")
+    for status, label, note in report["checks"]:
+        icon = {"ok": ok("[ OK ]"), "warn": warn("[ -- ]"), "fail": err("[ !! ]")}[status]
+        line = f"   {icon} {label}"
+        if note:
+            line += f"  {dim('- '+note)}"
+        print(line)
+
+    c = report["counts"]
+    print(f"\n  {info('SUMMARY')}")
+    print(f"     checks  : {len(report['checks'])}   (ok={c['ok']}  warn={c['warn']}  fail={c['fail']})")
+    print(f"     score   : {report['score']}/100")
+    print(f"     verdict : {vcol(verdict)}")
+    return report
+
 def cmd_init(args):
+    print_banner("init", "scaffold a device tree (finds it if you don't say where)")
     device = args.device or "X6886"
-    p = pathlib.Path(args.path) if args.path else pathlib.Path(f"device/infinix/{device}")
+    if args.path:
+        p = pathlib.Path(args.path)
+    else:
+        # discover: if a managed device dir exists, drop it under device/<brand>/<device>
+        p = _default_init_path(device)
     p.mkdir(parents=True, exist_ok=True)
     spt = f"""// BoardConfig.spt - generated by spider init
 board {{
@@ -684,21 +745,20 @@ board {{
         image_name: "Image.gz",
         separated_dtbo: true
     }},
-    recovery: {{
+        recovery: {{
         type: "twrp",
         include_crypto: true,
         flags: ["TW_EXCLUDE_APEX", "TW_HAS_MTP"]
     }}
 }}
-use cpp "validators/partition_check.cpp" as checker
-checker.verify_sizes(board.bootloader)
 """
+
+
     (p / "BoardConfig.spt").write_text(spt, encoding="utf-8")
-    print_banner()
     print(f"\n  {ok('[ OK ]')} initialized {p}/BoardConfig.spt")
     print(f"\n{info('next:')}")
-    print(f"   spider lunch {device} --tree {p}")
-    print(f"   spider build twrp --tree {p}")
+    print(f"   spider check {p}")
+    print(f"   spider build {device} --tree {p}")
 
 def cmd_convert(args):
     src = pathlib.Path(args.file)
@@ -747,7 +807,7 @@ def cmd_info(args):
     print(f"   spider build {v} --tree {tree}")
 
 def main():
-    parser = argparse.ArgumentParser(prog="spider", description="SpiderLang v2.0 - one language, every Android device")
+    parser = argparse.ArgumentParser(prog="spider", description="SpiderLang v3.0 - one language, every Android device")
     parser.add_argument("--version", action="store_true", help="show version")
     parser.add_argument("--trace", action="store_true", help="show full tracebacks")
     sub = parser.add_subparsers(dest="cmd")
@@ -774,8 +834,8 @@ def main():
     p_build.add_argument("--tree", dest="tree")
     p_build.set_defaults(func=cmd_build)
 
-    p_check = sub.add_parser("check", help="check syntax")
-    p_check.add_argument("file")
+    p_check = sub.add_parser("check", help="scan a recovery tree (or syntax-check a file)")
+    p_check.add_argument("file", help="device-tree path (full check) or .spt/.st file (syntax)")
     p_check.set_defaults(func=cmd_check)
 
     p_show = sub.add_parser("show", help="show highlighted source")
