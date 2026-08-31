@@ -66,7 +66,28 @@ class Parser:
             # otherwise treat as normal statement/expression (e.g., board.arch)
         if self.check(TokenType.USE):
             return self.use_declaration()
+        # Generic DSL blocks: module { ... }, module "x" { ... }, product { ... }, include { ... }
+        if (self.check(TokenType.IDENTIFIER) and self.peek().lexeme in ("module", "product", "include", "vendor")):
+            # look ahead: IDENTIFIER [STRING] LBRACE
+            j = self.current + 1
+            if j < len(self.tokens) and self.tokens[j].type == TokenType.STRING:
+                j += 1
+            if j < len(self.tokens) and self.tokens[j].type == TokenType.LBRACE:
+                return self.generic_block_declaration()
         return self.statement()
+
+    def generic_block_declaration(self):
+        # e.g. module { name: "...", srcs: [...], ... }  OR  module "x" { ... }
+        name_tok = self.advance()  # the identifier (module/product/...)
+        block_name = name_tok.lexeme
+        # optional quoted block name/parameter
+        if self.check(TokenType.STRING):
+            self.advance()
+        self.consume(TokenType.LBRACE, f"Expected '{{' after '{block_name}'")
+        fields = self.dict_entries()
+        self.consume(TokenType.RBRACE, f"Expected '}}' after {block_name} block")
+        # Represent as a board-like named block
+        return BoardStmt({}, [(block_name, DictLiteral(fields))] if fields else [], name_tok.line, name_tok.col)
 
     def let_declaration(self):
         tok = self.consume(TokenType.IDENTIFIER, "Expected variable name after 'let'")
@@ -392,6 +413,9 @@ class Parser:
             elems = []
             if not self.check(TokenType.RBRACK):
                 while True:
+                    # allow trailing comma
+                    if self.check(TokenType.RBRACK):
+                        break
                     elems.append(self.expression())
                     if not self.match(TokenType.COMMA):
                         break

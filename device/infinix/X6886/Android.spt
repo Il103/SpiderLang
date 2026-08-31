@@ -1,0 +1,16 @@
+// Android.spt — SpiderLang native build entrypoint
+// Replaces Android.mk — declares the module for the recovery build.
+// This is NOT legacy .mk — it is parsed directly by the Spider VM.
+
+module "twrp_recovery_demo_X6886" {
+    name: "recovery",
+    platform: "android",
+    kind: "executable",
+    srcs: [
+        "main.cpp",
+        "twrp.cpp",
+    ],
+    static_libs: ["libtwrp", "libminadbd"],
+    shared_libs: ["libcrypto"],
+    init_rc: ["init.recovery.rc"],
+}

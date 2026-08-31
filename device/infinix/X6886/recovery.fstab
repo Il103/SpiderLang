@@ -1,0 +1,6 @@
+# recovery.fstab — X6886 partition table
+/dev/block/by-name/boot       /boot       emmc      defaults     0 0
+/dev/block/by-name/recovery   /recovery   emmc      defaults     0 0
+/dev/block/by-name/vendor_boot /vendor_boot emmc     defaults     0 0
+/dev/block/by-name/super      /super      emmc      defaults     0 0
+/dev/block/by-name/userdata   /data       f2fs      defaults     0 0
