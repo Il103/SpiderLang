@@ -1,5 +1,5 @@
 """
-SpiderLang — The 1601st Programming Language
+SpiderLang — one language, every Android device
 Created by Beru
 
 A modern, general-purpose language with universal FFI.

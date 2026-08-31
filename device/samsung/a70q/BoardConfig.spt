@@ -1,0 +1,37 @@
+// BoardConfig.spt — device/samsung/a70q — Samsung Galaxy A70
+// OrangeFox Recovery for the Snapdragon Galaxy A70 (SM-A705)
+board {
+    arch: "arm64",
+    arch_variant: "armv8-a",
+    cpu_abi: "arm64-v8a",
+    cpu_variant: "cortex-a75",
+
+    bootloader: {
+        board_name: "a70q",
+        kernel_pagesize: 2048,
+        boot_partition_size: 64.MB,
+        recovery_partition_size: 64.MB,
+        super_partition_size: 9128.MB
+    },
+
+    kernel: {
+        base: "0x00000000",
+        cmdline: "console=null androidboot.hardware=qcom androidboot.memcg=1",
+        image_name: "Image.gz-dtb",
+        separated_dtbo: true,
+        vendor_boot: true
+    },
+
+    recovery: {
+        type: "orangefox",
+        include_crypto: true,
+        has_mtp: true,
+        is_sar: true,
+        screen_height: 2400,
+        flags: [
+            "OF_USE_TWRP_SAR_DETECT",
+            "OF_SUPPORT_ALL_BLOCK_OTA_UPDATES",
+            "OF_USE_MAGISKBOOT"
+        ]
+    }
+}

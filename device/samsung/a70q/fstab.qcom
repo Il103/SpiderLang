@@ -1,0 +1,11 @@
+# fstab.qcom — Samsung Galaxy A70 (a70q) partition table
+# Modern A/B device with vendor_boot — Spider reads this natively.
+/dev/block/platform/soc/1d84000.ufshc/by-name/boot       /boot          emmc      defaults    defaults    slotselect
+/dev/block/platform/soc/1d84000.ufshc/by-name/vendor_boot /vendor_boot  emmc      defaults    defaults    slotselect
+/dev/block/platform/soc/1d84000.ufshc/by-name/init_boot  /init_boot     emmc      defaults    defaults    slotselect
+/dev/block/platform/soc/1d84000.ufshc/by-name/dtbo       /dtbo          emmc      defaults    defaults    slotselect
+/dev/block/platform/soc/1d84000.ufshc/by-name/super      /super         emmc      defaults    defaults    first_stage_mount
+/dev/block/platform/soc/1d84000.ufshc/by-name/userdata   /data          f2fs      defaults    defaults    wait,check,encryptable=footer
+/dev/block/platform/soc/1d84000.ufshc/by-name/misc       /misc          emmc      defaults    defaults    defaults
+/dev/block/platform/soc/1d84000.ufshc/by-name/metadata   /metadata      ext4      defaults    defaults    first_stage_mount
+/dev/block/platform/soc/1d84000.ufshc/by-name/vbmeta     /vbmeta        emmc      defaults    defaults    defaults

@@ -1,7 +1,7 @@
 [project]
 name = "spiderlang"
 version = "0.1.0"
-description = "SpiderLang — The 1601st Programming Language by Beru. Universal FFI, Android Recovery DSL."
+description = "SpiderLang — one language, every Android device. Native recovery build DSL, universal FFI."
 authors = [{name="Beru"}]
 readme = "README.md"
 requires-python = ">=3.9"

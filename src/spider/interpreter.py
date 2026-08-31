@@ -268,6 +268,25 @@ class Interpreter:
         self.globals.define("int", lambda x: int(x))
         self.globals.define("float", lambda x: float(x))
 
+        # file I/O — first-class language capabilities, from scratch
+        self.globals.define("read", self.builtin_read)
+        self.globals.define("readlines", self.builtin_readlines)
+        self.globals.define("write", self.builtin_write)
+        self.globals.define("listdir", self.builtin_listdir)
+        self.globals.define("exists", lambda p: os.path.exists(os.path.join(self.base_dir, p) if not os.path.isabs(p) else p))
+        self.globals.define("joinpath", lambda *a: os.path.join(*a))
+
+        # string & collection helpers (language-level, from scratch)
+        self.globals.define("split", lambda s, sep=None: s.split(sep) if isinstance(s, str) and s else [])
+        self.globals.define("upper", lambda s: s.upper() if isinstance(s, str) else s)
+        self.globals.define("lower", lambda s: s.lower() if isinstance(s, str) else s)
+        self.globals.define("starts_with", lambda s, p: isinstance(s, str) and s.startswith(p))
+        self.globals.define("contains", lambda s, p: isinstance(s, str) and p in s)
+        self.globals.define("range", lambda *a: list(range(*a)))
+
+        # Android/system tree understanding — a core language capability, not a script.
+        self.globals.define("understand", self.builtin_understand)
+
         # size helpers
         self.globals.define("bytes", lambda x: x.bytes if isinstance(x, SpiderSize) else int(x))
 
@@ -277,6 +296,148 @@ class Interpreter:
         print(out)
         self.output.append(out)
         return None
+
+    # === first-class file I/O (language-level, from scratch) ===
+    def _resolve(self, p):
+        return os.path.join(self.base_dir, p) if not os.path.isabs(p) else p
+
+    def builtin_read(self, path):
+        try:
+            with open(self._resolve(path), encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except Exception as e:
+            raise RuntimeError(f"read '{path}' failed: {e}")
+
+    def builtin_readlines(self, path):
+        try:
+            with open(self._resolve(path), encoding="utf-8", errors="replace") as f:
+                return [l.rstrip("\n") for l in f.readlines()]
+        except Exception as e:
+            raise RuntimeError(f"readlines '{path}' failed: {e}")
+
+    def builtin_write(self, path, content):
+        try:
+            full = self._resolve(path)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as f:
+                f.write(str(content))
+            return True
+        except Exception as e:
+            raise RuntimeError(f"write '{path}' failed: {e}")
+
+    def builtin_listdir(self, path="."):
+        try:
+            full = self._resolve(path)
+            return sorted(os.listdir(full)) if os.path.isdir(full) else []
+        except Exception:
+            return []
+
+    # === Android build-tree understanding (a core language capability) ===
+
+    def builtin_understand(self, path="."):
+        """Generically read and understand any device tree. Returns a rich dict."""
+        full = os.path.abspath(self._resolve(path))
+        if not os.path.isdir(full):
+            return {"exists": False, "root": full}
+
+        files = [f for f in os.listdir(full) if os.path.isfile(os.path.join(full, f))]
+
+        # ---- codename: derive from any signal, generically ----
+        codename = None
+        for f in files:
+            if f.startswith("BoardConfig"):
+                content = self.builtin_read(os.path.join(full, f))
+                m = re.search(r"(?:board_name|TARGET_DEVICE|BOARD_NAME)\s*[=:]\s*[\"']?([A-Za-z0-9_\-]+)", content)
+                codename = m.group(1) if m else None
+                if codename:
+                    break
+        if not codename:
+            for f in files:
+                m = re.match(r"^(?:omni_|ofox_|pbrp_|shrp_|rw_|twrp_|ctr_)([A-Za-z0-9_\-]+)\.mk$", f)
+                if m:
+                    codename = m.group(1)
+                    break
+        if not codename:
+            for f in files:
+                if f == "AndroidProducts.mk":
+                    content = self.builtin_read(os.path.join(full, f))
+                    m = re.search(r"/?([A-Za-z0-9_\-]+)\.mk", content)
+                    if m:
+                        codename = m.group(1)
+                        break
+
+        # ---- recovery variant: which codename makefile family is present ----
+        variants = []
+        fam = {"omni_": "twrp", "ofox_": "orangefox", "pbrp_": "pitchblack",
+               "shrp_": "shrp", "rw_": "redwolf", "twrp_": "twrp", "ctr_": "ctr"}
+        for f in files:
+            for pref, name in fam.items():
+                if f.startswith(pref) and f.endswith(".mk"):
+                    if name not in variants:
+                        variants.append(name)
+        # also detect from flags present in any mk
+        if not variants:
+            for f in files:
+                if f.endswith(".mk"):
+                    content = self.builtin_read(os.path.join(full, f))
+                    for pref, name in {"TW_": "twrp", "OF_": "orangefox", "PBRP_": "pitchblack", "SHRP_": "shrp"}.items():
+                        if re.search(rf"^{pref}", content, re.M):
+                            if name not in variants:
+                                variants.append(name)
+
+        # ---- partitions from any fstab file ----
+        partitions = []
+        fstab_files = [f for f in files if f.startswith("fstab") or f == "recovery.fstab"]
+        for f in fstab_files:
+            for line in self._read_lines(os.path.join(full, f)):
+                parts = line.split()
+                if len(parts) >= 4 and parts[0].startswith("/dev"):
+                    src, mp, fstype, opts = parts[0], parts[1], parts[2], parts[3]
+                    flags = parts[5] if len(parts) > 5 else ""
+                    bn = None
+                    m = re.search(r"by-name/([A-Za-z0-9_\-]+)", src)
+                    if m:
+                        bn = m.group(1)
+                    ab = "slotselect" in flags or "slot" in flags
+                    partitions.append({
+                        "partition": bn or mp,
+                        "mount": mp, "type": fstype, "a_b": ab,
+                        "role": self._partition_role(mp),
+                    })
+
+        # ---- lunch combos ----
+        lunch = []
+        if "vendorsetup.sh" in files:
+            content = self.builtin_read(os.path.join(path, "vendorsetup.sh"))
+            lunch = re.findall(r"add_lunch_combo\s+['\"]?([A-Za-z0-9_.\-]+)", content)
+
+        return {
+            "exists": True,
+            "root": full,
+            "codename": codename,
+            "recoveries": variants,                    # e.g. ["twrp"], ["orangefox"]
+            "partitions": partitions,
+            "lunch": lunch,
+            "count_mk": len([f for f in files if f.endswith(".mk")]),
+            "count_spt": len([f for f in files if f.endswith(".spt")]),
+            "files": files,
+        }
+
+    def _read_lines(self, full):
+        try:
+            with open(full, encoding="utf-8", errors="replace") as f:
+                return f.read().splitlines()
+        except Exception:
+            return []
+
+    def _partition_role(self, mp):
+        roles = {"/boot": "boot", "/recovery": "recovery", "/vendor_boot": "vendor_boot",
+                 "/init_boot": "init_boot", "/dtbo": "dtbo", "/super": "super (dynamic)",
+                 "/data": "userdata", "/cache": "cache", "/system": "system",
+                 "/vendor": "vendor", "/product": "product", "/odm": "odm",
+                 "/metadata": "metadata", "/vbmeta": "vbmeta", "/misc": "misc",
+                 "/efs": "efs", "/persist": "persist"}
+        return roles.get(mp, "partition")
 
     def stringify(self, v):
         if isinstance(v, SpiderSize):
@@ -311,9 +472,9 @@ class Interpreter:
                 val = self.evaluate(expr, env)
                 return self.stringify(val)
             except Exception as e:
-                return f"{{ERR:{e}}}"
+                # No braces in the error, else it would be re-interpolated recursively.
+                return "[?]"
         # Use regex to find { ... } but not escaped
-        # This will also handle nested? Keep simple
         pattern = re.compile(r'\{([^{}]+)\}')
         # Only interpolate if contains {
         if "{" in s and "}" in s:

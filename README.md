@@ -1,26 +1,41 @@
-# SpiderLang — The 1601st Programming Language
+# SpiderLang — one language, every Android device
 ### Created by Beru
 
 > Write in SpiderLang, run everything else.
 
-SpiderLang is a modern, general-purpose language built from scratch by one developer — Beru.
-
-It was created to be the 1601st language in the world — a language that doesn't compete with other 1600 languages, but connects to all of them.
+SpiderLang is a modern, general-purpose language built from scratch by one
+developer — Beru. It is not one more language competing with the others: it is
+_the_ language that understands and drives the entire Android device-tree
+ecosystem natively — every device, every SoC, every recovery.
 
 ## Vision
 
-All 1600+ languages exist. SpiderLang is the next one — the universal bridge. Instead of replacing C, C++, Python, JavaScript, Rust, and others, SpiderLang can call them all natively through a unified FFI.
+Instead of replacing C, C++, Python, JavaScript, Rust, or the hundreds of `.mk`,
+`.fstab` and `.sh` files scattered across Android device trees, SpiderLang reads
+them all **as itself**. A device tree is not a pile of scripts to you — it is
+one structure the language simply understands. The build pipeline is native:
+`.spt -> lexer -> parser -> AST -> IR`, no `.mk` needed. And through a unified
+FFI, SpiderLang can call any other language when you genuinely need it.
 
 ## Why SpiderLang?
 
-- **General Purpose** — file system, networking, math, collections, everything built-in
-- **Familiar Syntax** — clean blend of Python + Kotlin + Rust + JavaScript
-- **Universal FFI** — `use python "ai.py"` , `use cpp "math.cpp"` — one syntax to call any language
-- **Plugin Architecture** — support for 1600+ languages via `src/spider/ffi/<lang>.py` — add a new language in 20 lines
-- **Size System** — `64.MB == 65536.KB == 67108864.B` — unified units from B to EB (binary 1024)
-- **Android Recovery DSL** — replaces `BoardConfig.mk` with `BoardConfig.spt`
-- **Safe & Strict** — line:col error reporting, no silent bugs
-- **Solo Built** — designed, specified, and implemented by one person: Beru. Lexer, Parser, AST, VM all handwritten from scratch.
+- **The language understands any device tree** — codename, recovery variant,
+  partitions, A/B slots and lunch combos are derived *by the language itself*
+  from whatever is actually in the tree. No per-device scripts.
+- **Reads every file in a tree natively** — `BoardConfig.spt`, `ofox_*.mk`,
+  `omni_*.mk`, `pbrp_*.mk`, `shrp_*.mk`, `device.mk`, `fstab.*`, `vendorsetup.sh`.
+  If there is a `.spt`, that is the tree.
+- **Every recovery supported** — TWRP, OrangeFox, PitchBlack (PBRP), SkyHawk
+  (SHRP), RedWolf, and more — each detected from its codename makefile.
+- **First-class file I/O** — `read()`, `readlines()`, `listdir()`, `write()`
+  and `understand()` are built into the language core, not shipped as scripts.
+- **Universal FFI** — `use python "ai.py"`, `use cpp "math.cpp"` — one syntax
+  to call any language.
+- **Size system** — `64.MB == 65536.KB == 67108864.B` — B to EB (binary 1024).
+- **Android Recovery DSL** — `board { ... }` replaces `BoardConfig.mk`.
+- **Safe & Strict** — line:col error reporting, no silent bugs.
+- **Solo built** — designed, specified, and implemented by one person: Beru.
+  Lexer, Parser, AST, VM all handwritten from scratch.
 
 ## Extension
 
@@ -31,8 +46,10 @@ All 1600+ languages exist. SpiderLang is the next one — the universal bridge. 
 ```bash
 pip install -e .
 spider run examples/hello.spt
-spider run examples/BoardConfig.spt
+spider info device/infinix/X6886        # the language understands the tree
+spider tree device/infinix/X6886        # tree + partitions + codename
 spider build twrp --tree device/infinix/X6886
+spider build orangefox --tree device/samsung/a70q   # A/B device, OrangeFox
 spider convert BoardConfig.spt --to mk
 spider check BoardConfig.spt
 ```
@@ -41,7 +58,7 @@ spider check BoardConfig.spt
 
 ```spider
 let name = "Beru"
-print("Hello {name} 🔥")
+print("Hello {name}")
 
 func factorial(n) {
     if n <= 1 { return 1 }
@@ -49,15 +66,15 @@ func factorial(n) {
 }
 print(factorial(5))  // 120
 
-let nums = [1, 2, 3, 4]
-let doubled = nums.map(x => x * 2)
-print(doubled) // [2, 4, 6, 8]
+// First-class file I/O — the language reads a device tree by itself
+let tree = understand("device/infinix/X6886")
+print("codename : {tree.codename}")
+print("recovery : {tree.recoveries}")
+print("partitions: {tree.partitions}")
 
 // Universal FFI — call any language
 use python "ai.py" as ai
 use cpp "math.cpp" as math
-print(ai.predict([1,2,3]))
-print(math.add(10, 20))
 ```
 
 ## Android Recovery Example
@@ -86,7 +103,7 @@ Build it:
 
 ```bash
 spider build twrp --tree device/infinix/X6886
-# Generates out/BoardConfig.mk and builds recovery.img
+# Generates out/board.json and builds recovery.img
 ```
 
 ## Size Units
@@ -111,10 +128,14 @@ All binary (1024):
 ## CLI
 
 ```
-spider run <file.spt>              Run a SpiderLang file
-spider build twrp --tree <path>    Build TWRP recovery from device tree
-spider convert <file.spt> --to mk  Convert .spt to .mk
-spider check <file.spt>            Check syntax only
+spider info <path>               Full device report (language understanding)
+spider tree <path>               Device tree + partitions + A/B + codename
+spider lunch <device>            Select device (auto-detects codename+variant)
+spider build twrp --tree <path>  Build any recovery natively from .spt
+spider build orangefox --tree .. Build OrangeFox on an A/B device
+spider run <file.spt>            Run a SpiderLang file
+spider convert <file.spt> --to mk  Convert .spt to .mk (legacy)
+spider check <file.spt>          Check syntax only
 ```
 
 ## Architecture
@@ -124,16 +145,19 @@ src/spider/
 ├── lexer.py      // Handmade, char-by-char, no regex libs
 ├── parser.py     // Recursive-descent, handmade
 ├── ast_nodes.py  // All nodes
-├── interpreter.py // Tree-walk VM + SpiderSize + board DSL
+├── interpreter.py // Tree-walk VM + SpiderSize + board DSL + file I/O
+│                  //   + understand() — reads any device tree natively
+├── recoveries.py // Language knowledge: every recovery + its codename/flags
 ├── ffi/          // Universal FFI plugins
 │   ├── registry.py
 │   ├── python.py
 │   ├── cpp.py
-│   └── js.py     // add new lang in 20 lines
+│   └── js.py
 └── cli.py        // spider binary with ASCII art
 ```
 
-From scratch: No `eval`, no `exec`, no ANTLR, no PLY — every token and node is built by hand.
+From scratch: No `eval`, no `exec`, no ANTLR, no PLY — every token and node is
+built by hand.
 
 ## License
 

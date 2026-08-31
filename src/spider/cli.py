@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-SpiderLang CLI — The 1601st Language (v1.0)
-Handcrafted ASCII interface — no emojis, pure terminal art.
+SpiderLang CLI — v2.0
+Reads the whole Android build tree natively: .spt, every recovery codename .mk,
+fstab, vendorsetup — one language, every device. Handcrafted ASCII, no emojis.
 Commands:
   spider run <file.spt>
   spider lunch <device> [--tree <path>]
@@ -36,7 +37,7 @@ def err(s):  return f"{RED}{s}{RESET}"
 def info(s): return f"{CYAN}{s}{RESET}"
 def dim(s):  return f"{DIM}{s}{RESET}"
 
-VERSION = "1.0"
+VERSION = "2.0"
 
 # ── Pure-ASCII Spider banners (no emojis, box-drawing + block chars only) ──
 SPIDER_BANNER = """\
@@ -45,9 +46,9 @@ SPIDER_BANNER = """\
   |\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|\\   /|
    \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_/   \\_
 
-                  / _ \\   SpiderLang  v1.0   The 1601st Language
-                \\_\\(_)/_/   Written from scratch by Beru
-                 _// \\\\_    wrote in SpiderLang, run everything else
+                  / _ \\   SpiderLang  v2.0   one language, every device
+                \\_\\(_)/_/   crafted from scratch by Beru
+                 _// \\\\_    reads the whole Android tree natively
                   /   \\
                  /^*^\\
                  /   \\
@@ -271,12 +272,18 @@ def cmd_run(args):
             traceback.print_exc()
         sys.exit(1)
 
+def _understand(path):
+    """One entry point: the language understands any device tree."""
+    from .interpreter import Interpreter
+    return Interpreter(base_dir=".").builtin_understand(str(path))
+
 def cmd_tree(args):
     print_banner()
     path = pathlib.Path(args.path) if args.path else pathlib.Path(".")
     root = build_device_tree_node(path)
     print(f"\n{info('┌─ DEVICE TREE ─────────────────────────────')}")
     print(ascii_tree(root))
+
     found, _ = detect_device_tree(path)
     if found:
         print(f"\n{info('┌─ RECOGNIZED FILES')}")
@@ -285,34 +292,71 @@ def cmd_tree(args):
     else:
         print(f"\n{warn('  no recognized device-tree files. run: spider init <device>')}")
 
+    data = _understand(path)
+    if not data["exists"] or not found:
+        return
+    print(f"\n{info('┌─ UNDERSTOOD (language core)')}")
+    recos = data["recoveries"] or ["(none)"]
+    print(f"   {ok('[*]')} codename        : {data['codename'] or '?'}")
+    print(f"   {ok('[*]')} recovery variant: {', '.join(recos)}")
+    print(f"   {ok('[*]')} partitions      : {len(data['partitions'])}")
+    if data["lunch"]:
+        print(f"   {ok('[*]')} lunch combos    : {len(data['lunch'])}")
+    if data["partitions"]:
+        print(f"\n{info('┌─ PARTITIONS (read from fstab)')}")
+        for e in data["partitions"]:
+            ab = dim('A/B ') if e["a_b"] else ''
+            print(f"   {ok('[*]')} {e['partition']:<16} {e['type']:<6} {ab}{dim('- '+e['role'])}")
+    if data["count_mk"]:
+        print(f"\n  {dim('read %d makefiles + %d SpiderLang source natively' % (data['count_mk'], data['count_spt']))}")
+
+
 def cmd_lunch(args):
     print_banner()
     print(lunch_header(args.device or "?"))
     device = args.device or "X6886"
-    # Locate the device tree (recognized by BoardConfig.spt / Android.spt)
+    # Locate the device tree (recognized by BoardConfig.spt / Android.spt, or any tree)
     search_paths = []
     if args.tree:
         search_paths.append(pathlib.Path(args.tree))
     search_paths += [
         pathlib.Path(f"device/infinix/{device}"),
         pathlib.Path(f"device/{device}"),
+        pathlib.Path(f"device/samsung/{device}"),
+        pathlib.Path(f"device/xiaomi/{device}"),
         pathlib.Path("examples"),
         pathlib.Path(f"device/infinix/X6886"),
+        pathlib.Path(f"device/samsung/a70q"),
     ]
     tree = None
     for p in search_paths:
-        if (p / "BoardConfig.spt").exists() or (p / "Android.spt").exists():
+        if p.exists() and (p / "BoardConfig.spt").exists() or (p / "BoardConfig.mk").exists():
             tree = p
             break
     if not tree:
+        # last resort: find any device tree under device/
+        import pathlib as _pl
+        for cand in _pl.Path("device").rglob("BoardConfig.spt") if _pl.Path("device").exists() else []:
+            tree = cand.parent
+            break
+    if not tree:
         tree = pathlib.Path(f"device/infinix/{device}")
-        print(warn(f"  no BoardConfig.spt found in searched paths; using {tree} as target"))
+        print(warn(f"  no device tree found in searched paths; using {tree} as target"))
         tree.mkdir(parents=True, exist_ok=True)
     else:
         print(f"  {ok('[*]')} device tree recognized : {tree}")
 
+    data = _understand(tree)
+    if data.get("codename"):
+        device = data["codename"]
+    variant = data["recoveries"][0] if data["recoveries"] else "twrp"
+
     print(f"\n  device   : {device}")
     print(f"  tree     : {tree}")
+    print(f"  variant  : {variant}  {dim('- auto-detected by the language') if data['recoveries'] else ''}")
+    print(f"  codename : {data.get('codename') or device}")
+    nparts = len(data["partitions"])
+    print(f"  partitions: {nparts}  {dim('- from fstab, read natively') if nparts else ''}")
 
     found, _ = detect_device_tree(tree)
     print(f"\n{info('┌─ DEVICE TREE')}")
@@ -324,25 +368,27 @@ def cmd_lunch(args):
     # AOSP-style lunch steps
     print(f"\n{info('┌─ LUNCH')}")
     steps = [
-        "loading vendor config",
-        "parsing board DSL (arch/kernel/recovery/partitions)",
+        "locating device tree",
+        "reading BoardConfig.spt native",
+        f"reading codename mk ({variant}) native",
+        "reading recovery.fstab partitions",
+        "detecting lunch combos (vendorsetup.sh)",
         "validating size units (B -> EB)",
-        "resolving FFI validators",
-        "setting TARGET_PRODUCT",
-        "setting TARGET_BUILD_VARIANT (eng/userdebug)",
     ]
     for i, s in enumerate(steps, 1):
         time.sleep(0.12)
-        print(f"  [ {i}/{len(steps)} ] {s:<45} {ok('... done')}")
+        print(f"  [ {i}/{len(steps)} ] {s:<50} {ok('... done')}")
 
     out_dir = pathlib.Path("out")
     out_dir.mkdir(exist_ok=True)
-    cfg = {"device": device, "tree": str(tree), "arch": "arm64",
-           "recovery": "twrp", "version": VERSION, "ts": time.time()}
+    cfg = {"device": device, "codename": data.get("codename") or device,
+           "tree": str(tree), "arch": "arm64",
+           "recovery": variant, "partitions": len(data["partitions"]),
+           "version": VERSION, "ts": time.time()}
     (out_dir / "lunch.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     print(f"\n  {ok('lunch complete')} -> saved out/lunch.json")
     print(f"\n{info('next:')}")
-    print(f"   spider build twrp --tree {tree}")
+    print(f"   spider build {variant} --tree {tree}")
 
 def cmd_build(args):
     print_banner()
@@ -363,12 +409,19 @@ def cmd_build(args):
             tree = pathlib.Path("device/infinix/X6886")
 
     target = args.target or "twrp"
-    valid = ["twrp", "orangefox", "ofox", "pbrp", "shrp", "redwolf"]
-    if target not in valid:
-        print(warn(f"  [warn] unknown target '{target}' (known: {', '.join(valid)})"))
+    # any recovery is a valid target — the language knows them all
+    from .recoveries import all_recoveries
+    _recos = all_recoveries()
+    known = sorted({name for r in _recos for name in {r.name, r.mk_prefix.rstrip("_"), *r.aliases}})
+    if not any(r.matches_target(target) for r in _recos):
+        print(warn(f"  [warn] unknown target '{target}' (known: {', '.join(known)})"))
 
     print(f"\n  target   : {target}")
     print(f"  tree     : {tree}")
+
+    # the language understands the tree: codename + variant + partitions
+    _und = _understand(tree)
+    print(f"  device   : {_und.get('codename') or '?'}   {dim('(' + ', '.join(_und.get('recoveries') or ['twrp']) + ')') if _und.get('recoveries') else ''}")
 
     # find BoardConfig.spt
     spt_file = None
@@ -440,17 +493,38 @@ def cmd_build(args):
                         board_json[k][sk] = sv
             else:
                 board_json[k] = v
+        # merge what the language understood about the tree into the output
+        und = _understand(tree)
+        board_json["_understood"] = {
+            "codename": und.get("codename"),
+            "recoveries": und.get("recoveries"),
+            "lunch": und.get("lunch"),
+            "partitions": [p["partition"] for p in und.get("partitions", [])],
+            "a_b_partitions": [p["partition"] for p in und.get("partitions", []) if p["a_b"]],
+            "target": target,
+        }
         (out_dir / "board.json").write_text(json.dumps(board_json, indent=2), encoding="utf-8")
         (out_dir / "BoardConfig.mk.legacy").write_text(transpile_to_mk(board, target), encoding="utf-8")
 
         print(f"\n{info('┌─ OUTPUT')}")
         print(f"   {ok('[*]')} out/board.json")
         print(f"   {ok('[*]')} out/recovery.img")
-        print(f"   {dim('[*]')} out/BoardConfig.mk.legacy (compat, not used)")
+        if und.get("a_b_partitions"):
+            print(f"   {warn('[*]')} A/B device detected: {', '.join(und['a_b_partitions'])}")
 
+        if target.lower() in ("orangefox", "ofox"):
+            _ro = "OrangeFox"
+        elif target.lower() in ("pbrp", "pitchblack"):
+            _ro = "PitchBlack"
+        elif target.lower() in ("shrp", "skyhawk"):
+            _ro = "SkyHawk"
+        elif target.lower() in ("redwolf", "rw"):
+            _ro = "RedWolf"
+        else:
+            _ro = "TWRP"
         print(f"""
    .-""" + "-"*54 + f""".
-  (   BUILD SUCCESS      device: {str(tree).split('/')[-1]:<24}
+  (   BUILD SUCCESS      {_ro} / {und.get('codename') or str(tree).split('/')[-1]:<22}
    \\_""" + "-"*54 + f"""/
     +---------------------------------------------------------+
     |   recovery.img  ->  fastboot flash recovery recovery.img |
@@ -557,8 +631,41 @@ def cmd_convert(args):
     out.write_text(mk, encoding="utf-8")
     print(f"  {ok('[ OK ]')} converted {src} -> {out} (legacy compat)")
 
+def cmd_info(args):
+    print_banner()
+    tree = pathlib.Path(args.path) if args.path else None
+    if not tree:
+        # auto-find a device tree
+        for cand in sorted(pathlib.Path("device").rglob("BoardConfig.spt")) if pathlib.Path("device").exists() else []:
+            tree = cand.parent
+            break
+    if not tree or not tree.exists():
+        print(err(f"[error] no device tree at {tree or '?'}"))
+        sys.exit(1)
+
+    data = _understand(tree)
+    print(f"\n{info('┌─ DEVICE REPORT')}")
+    print(f"   {ok('[*]')} tree      : {tree}")
+    print(f"   {ok('[*]')} codename  : {data.get('codename') or '?'}")
+    print(f"   {ok('[*]')} recovery  : {', '.join(data.get('recoveries') or ['twrp'])}")
+    print(f"   {ok('[*]')} lunch     : {', '.join(data.get('lunch') or ['-'])}")
+    print(f"   {ok('[*]')} files     : {len(data.get('files', []))} ({data.get('count_mk',0)} make / {data.get('count_spt',0)} spider)")
+
+    if data.get("partitions"):
+        print(f"\n{info('┌─ PARTITIONS')}")
+        for p in data["partitions"]:
+            ab = dim('  [A/B]') if p["a_b"] else ''
+            print(f"   {ok('[*]')} {p['partition']:<16} {p['type']:<6} {dim('- '+p['role'])}{ab}")
+    if any(p["a_b"] for p in data.get("partitions", [])):
+        ab_list = [p["partition"] for p in data["partitions"] if p["a_b"]]
+        print(f"\n   {warn('[!]')} A/B (slot-based) device — slot-aware recovery needed: {', '.join(ab_list)}")
+
+    print(f"\n{info('next:')}")
+    v = data.get("recoveries", ["twrp"])[0]
+    print(f"   spider build {v} --tree {tree}")
+
 def main():
-    parser = argparse.ArgumentParser(prog="spider", description="SpiderLang - The 1601st Language by Beru")
+    parser = argparse.ArgumentParser(prog="spider", description="SpiderLang v2.0 - one language, every Android device")
     parser.add_argument("--version", action="store_true", help="show version")
     parser.add_argument("--trace", action="store_true", help="show full tracebacks")
     sub = parser.add_subparsers(dest="cmd")
@@ -570,6 +677,10 @@ def main():
     p_tree = sub.add_parser("tree", help="show device tree")
     p_tree.add_argument("path", nargs="?", help="device tree path")
     p_tree.set_defaults(func=cmd_tree)
+
+    p_info = sub.add_parser("info", help="full device report (language understanding)")
+    p_info.add_argument("path", nargs="?", help="device tree path")
+    p_info.set_defaults(func=cmd_info)
 
     p_lunch = sub.add_parser("lunch", help="select device (AOSP lunch)")
     p_lunch.add_argument("device", nargs="?", help="device codename")
