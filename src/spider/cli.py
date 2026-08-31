@@ -212,6 +212,9 @@ def detect_device_tree(tree_path):
     for f in sorted(tree_path.glob("fstab*")):
         if f.name not in ("fstab", "fstab.mk"):
             found.append((f.name, "partition table (fstab)"))
+    # any *.prop — system.prop etc, read natively
+    for f in sorted(tree_path.glob("*.prop")):
+        found.append((f.name, "props file — read natively (.prop)"))
     # recovery codename files:  *_<codename>.mk   or  (second language) .st
     fam = ["omni", "ofox", "pbrp", "shrp", "rw", "twrp", "ctr", "omni_"]
     for f in sorted(tree_path.iterdir()):
@@ -222,6 +225,14 @@ def detect_device_tree(tree_path):
                 found.append((f.name, "recovery definition (second language .st)"))
     for f in tree_path.glob("omni_*.mk"):
         found.append((f.name, "TWRP product makefile"))
+    # new native formats
+    if (tree_path / "AndroidProducts.tm").exists():
+        found.append(("AndroidProducts.tm", "product list (Soong successor .tm)"))
+    if (tree_path / "device.st").exists():
+        found.append(("device.st", "device definition (second language .st)"))
+    for f in sorted(tree_path.glob("*.tm")):
+        if f.name not in ("Android.tm", "AndroidProducts.tm"):
+            found.append((f.name, "build module (.tm)"))
     return found, tree_path
 
 def build_device_tree_node(path):

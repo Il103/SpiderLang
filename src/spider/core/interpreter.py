@@ -293,6 +293,7 @@ class Interpreter:
 
         # Soong (.bp) understanding — the language reads Android.bp by itself.
         self.globals.define("soong", self.builtin_soong)
+        self.globals.define("props", self.builtin_props)
 
         # size helpers
         self.globals.define("bytes", lambda x: x.bytes if isinstance(x, SpiderSize) else int(x))
@@ -361,6 +362,12 @@ class Interpreter:
                      "ramdisk_size", "os_version", "os_patch_level", "valid")}
         return head
 
+    def builtin_props(self, path="system.prop"):
+        """Hidden native capability: understand a .prop file."""
+        from ..knowledge.props import analyze_file
+        full = os.path.abspath(self._resolve(path))
+        return analyze_file(full)
+
     def builtin_soong(self, path="Android.bp"):
         """Hidden native capability: understand a Soong/.bp build file."""
         from ..knowledge.soong import analyze_file, counts
@@ -428,6 +435,12 @@ class Interpreter:
         # ---- partitions from any fstab file ----
         partitions = []
         fstab_files = [f for f in files if f.startswith("fstab") or f == "recovery.fstab"]
+        # also look in recovery/root/first_stage_ramdisk for old trees
+        import pathlib as _pl2
+        for cand in ["recovery/root/first_stage_ramdisk/fstab.mt6789", "recovery/root/first_stage_ramdisk/fstab.emmc", "recovery/root/fstab.mt6789"]:
+            cp = _pl2.Path(full) / cand
+            if cp.exists() and cand not in fstab_files:
+                fstab_files.append(cand)
         for f in fstab_files:
             for line in self._read_lines(os.path.join(full, f)):
                 parts = line.split()
@@ -465,6 +478,22 @@ class Interpreter:
             content = self.builtin_read(os.path.join(full, "vendorsetup.sh"))
             lunch = re.findall(r"add_lunch_combo\s+['\"]?([A-Za-z0-9_.\-]+)", content)
 
+        # ---- props: every *.prop in the tree, read natively ----
+        prop_files = [f for f in files if f.endswith(".prop")]
+        props_data = {}
+        props_total = 0
+        props_issues = 0
+        try:
+            from ..knowledge.props import analyze_file as _analyze_prop
+            for pf in prop_files:
+                r = _analyze_prop(os.path.join(full, pf))
+                if r.get("exists"):
+                    props_data[pf] = r
+                    props_total += r.get("total", 0)
+                    props_issues += len(r.get("issues", []))
+        except Exception:
+            pass
+
         return {
             "exists": True,
             "root": full,
@@ -476,6 +505,10 @@ class Interpreter:
             "count_mk": len([f for f in files if f.endswith(".mk")]),
             "count_spt": len([f for f in files if f.endswith(".spt")]),
             "count_st": len([f for f in files if f.endswith(".st")]),
+            "count_prop": len(prop_files),
+            "props": props_data,
+            "props_total": props_total,
+            "props_issues": props_issues,
             "files": files,
         }
 

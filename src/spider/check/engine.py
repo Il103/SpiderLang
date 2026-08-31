@@ -116,7 +116,33 @@ class Check:
         # 6 — important recovery flags (knowledge-based completeness)
         self._flag_checks(und, recoveries)
 
-        # 7 — Soong (.bp) check
+        # 7 — props (.prop) check — native props understanding
+        prop_files = [f for f in und.get("files", []) if f.endswith(".prop")]
+        if prop_files:
+            from ..knowledge.props import analyze_file as _aprop, check_props
+            total_props = 0
+            total_issues = 0
+            all_props = {}
+            for f in prop_files:
+                r = _aprop(os.path.join(self.base, f))
+                if r.get("exists"):
+                    total_props += r.get("total", 0)
+                    total_issues += len(r.get("issues", []))
+                    all_props.update(r.get("props", {}))
+            if total_issues:
+                self._add("warn", f"props: {total_props} entries in {len(prop_files)} .prop file(s), {total_issues} parse warnings")
+            else:
+                self._add("ok", f"props: {total_props} entries in {len(prop_files)} .prop file(s), clean")
+            # essential props
+            cp = check_props(all_props)
+            if cp["missing"]:
+                self._add("warn", f"props missing essentials: {', '.join(cp['missing'])}")
+            else:
+                self._add("ok", "props essentials present (ro.hardware, ro.build.product...)")
+        else:
+            self._add("warn", "no .prop files (add system.prop)")
+
+        # 8 — Soong (.bp) check
         bp = [f for f in und.get("files", []) if f.endswith(".bp")]
         if bp:
             from ..knowledge.soong import analyze_file, counts
@@ -147,7 +173,7 @@ class Check:
 
         text_buf = []
         for f in und.get("files", []):
-            if f.endswith((".st", ".mk", ".spt")):
+            if f.endswith((".st", ".mk", ".spt", ".prop")):
                 t = self._read(f)
                 if t:
                     text_buf.append(t)
